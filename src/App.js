@@ -109,6 +109,7 @@ const XRPCVDTracker = () => {
     updateData();
     const interval = setInterval(updateData, 10000); // Her 10 saniyede güncelle
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatNumber = (num) => {
@@ -130,7 +131,6 @@ const XRPCVDTracker = () => {
   };
 
   const totalCVD = exchanges.reduce((sum, ex) => sum + ex.cvd, 0);
-  const avgCVD = totalCVD / exchanges.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
