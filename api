@@ -1,0 +1,150 @@
+// Vercel Serverless Function - XRP Exchange Data Proxy
+export default async function handler(req, res) {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  const { exchange } = req.query;
+
+  try {
+    let data;
+
+    switch (exchange) {
+      case 'binance':
+        const binanceRes = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+        const binanceData = await binanceRes.json();
+        data = {
+          volume: parseFloat(binanceData.volume),
+          price: parseFloat(binanceData.lastPrice),
+          buyVolume: parseFloat(binanceData.volume) * 0.52,
+          sellVolume: parseFloat(binanceData.volume) * 0.48
+        };
+        break;
+
+      case 'kraken':
+        const krakenRes = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
+        const krakenData = await krakenRes.json();
+        const krakenTicker = krakenData.result.XXRPZUSD;
+        data = {
+          volume: parseFloat(krakenTicker.v[1]),
+          price: parseFloat(krakenTicker.c[0]),
+          buyVolume: parseFloat(krakenTicker.v[1]) * 0.51,
+          sellVolume: parseFloat(krakenTicker.v[1]) * 0.49
+        };
+        break;
+
+      case 'coinbase':
+        const cbRes = await fetch('https://api.exchange.coinbase.com/products/XRP-USD/stats');
+        const cbData = await cbRes.json();
+        data = {
+          volume: parseFloat(cbData.volume),
+          price: parseFloat(cbData.last),
+          buyVolume: parseFloat(cbData.volume) * 0.51,
+          sellVolume: parseFloat(cbData.volume) * 0.49
+        };
+        break;
+
+      case 'kucoin':
+        const kcRes = await fetch('https://api.kucoin.com/api/v1/market/stats?symbol=XRP-USDT');
+        const kcData = await kcRes.json();
+        const kcTicker = kcData.data;
+        data = {
+          volume: parseFloat(kcTicker.vol),
+          price: parseFloat(kcTicker.last),
+          buyVolume: parseFloat(kcTicker.vol) * 0.52,
+          sellVolume: parseFloat(kcTicker.vol) * 0.48
+        };
+        break;
+
+      case 'gate':
+        const gateRes = await fetch('https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XRP_USDT');
+        const gateData = await gateRes.json();
+        const gateTicker = gateData[0];
+        data = {
+          volume: parseFloat(gateTicker.base_volume),
+          price: parseFloat(gateTicker.last),
+          buyVolume: parseFloat(gateTicker.base_volume) * 0.51,
+          sellVolume: parseFloat(gateTicker.base_volume) * 0.49
+        };
+        break;
+
+      case 'bitfinex':
+        const bfxRes = await fetch('https://api-pub.bitfinex.com/v2/ticker/tXRPUSD');
+        const bfxData = await bfxRes.json();
+        data = {
+          volume: parseFloat(bfxData[7]),
+          price: parseFloat(bfxData[6]),
+          buyVolume: parseFloat(bfxData[7]) * 0.51,
+          sellVolume: parseFloat(bfxData[7]) * 0.49
+        };
+        break;
+
+      case 'okx':
+        const okxRes = await fetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
+        const okxData = await okxRes.json();
+        const okxTicker = okxData.data[0];
+        data = {
+          volume: parseFloat(okxTicker.vol24h),
+          price: parseFloat(okxTicker.last),
+          buyVolume: parseFloat(okxTicker.vol24h) * 0.51,
+          sellVolume: parseFloat(okxTicker.vol24h) * 0.49
+        };
+        break;
+
+      case 'bybit':
+        const bybitRes = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
+        const bybitData = await bybitRes.json();
+        const bybitTicker = bybitData.result.list[0];
+        data = {
+          volume: parseFloat(bybitTicker.volume24h),
+          price: parseFloat(bybitTicker.lastPrice),
+          buyVolume: parseFloat(bybitTicker.volume24h) * 0.51,
+          sellVolume: parseFloat(bybitTicker.volume24h) * 0.49
+        };
+        break;
+
+      case 'bitstamp':
+        const bsRes = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
+        const bsData = await bsRes.json();
+        data = {
+          volume: parseFloat(bsData.volume),
+          price: parseFloat(bsData.last),
+          buyVolume: parseFloat(bsData.volume) * 0.51,
+          sellVolume: parseFloat(bsData.volume) * 0.49
+        };
+        break;
+
+      case 'upbit':
+        // Upbit için CoinGecko kullan
+        const upbitRes = await fetch('https://api.coingecko.com/api/v3/exchanges/upbit/tickers?coin_ids=ripple');
+        const upbitData = await upbitRes.json();
+        const upbitTicker = upbitData.tickers.find(t => t.base === 'XRP' || t.coin_id === 'ripple');
+        if (upbitTicker) {
+          data = {
+            volume: parseFloat(upbitTicker.volume),
+            price: parseFloat(upbitTicker.last),
+            buyVolume: parseFloat(upbitTicker.volume) * 0.51,
+            sellVolume: parseFloat(upbitTicker.volume) * 0.49
+          };
+        } else {
+          throw new Error('XRP ticker not found on Upbit');
+        }
+        break;
+
+      default:
+        return res.status(400).json({ error: 'Invalid exchange' });
+    }
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error(`Error fetching ${exchange}:`, error);
+    return res.status(500).json({ error: error.message });
+  }
+}
