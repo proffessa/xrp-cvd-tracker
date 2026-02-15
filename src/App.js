@@ -64,7 +64,6 @@ const XRPCVDTracker = () => {
   // Coinbase API
   const fetchCoinbaseData = async () => {
     try {
-      const response = await fetch('https://api.coinbase.com/v2/exchange-rates?currency=XRP');
       const statsResponse = await fetch('https://api.exchange.coinbase.com/products/XRP-USD/stats');
       const stats = await statsResponse.json();
       
