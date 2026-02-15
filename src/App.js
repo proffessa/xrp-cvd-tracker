@@ -4,16 +4,16 @@ import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle } from 'luci
 
 const XRPCVDTracker = () => {
   const [exchanges, setExchanges] = useState([
-    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F3BA2F', status: 'loading' },
-    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1E40AF', status: 'loading' },
-    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading' },
-    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading' },
-    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading' },
-    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16B157', status: 'loading' },
-    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00AB66', status: 'loading' },
-    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#17E3A5', status: 'loading' },
-    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#000000', status: 'loading' },
-    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F7A600', status: 'loading' }
+    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F3BA2F', status: 'loading', baseline: null },
+    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1E40AF', status: 'loading', baseline: null },
+    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading', baseline: null },
+    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading', baseline: null },
+    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading', baseline: null },
+    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16B157', status: 'loading', baseline: null },
+    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00AB66', status: 'loading', baseline: null },
+    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#17E3A5', status: 'loading', baseline: null },
+    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1A1A1A', status: 'loading', baseline: null },
+    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F7A600', status: 'loading', baseline: null }
   ]);
   
   const [historicalData, setHistoricalData] = useState([]);
@@ -21,194 +21,20 @@ const XRPCVDTracker = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState([]);
+  const [initialized, setInitialized] = useState(false);
 
-  // Binance API - Gerçek veri çeker
-  const fetchBinanceData = async () => {
+  // Vercel Serverless API'den veri çek
+  const fetchExchangeData = async (exchangeId) => {
     try {
-      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
-      const data = await response.json();
-      
-      return {
-        volume: parseFloat(data.volume),
-        quoteVolume: parseFloat(data.quoteVolume),
-        // Binance bid/ask verilerinden yaklaşık alım/satım hacmi hesapla
-        buyVolume: parseFloat(data.volume) * 0.52, // Tipik piyasa dengesi
-        sellVolume: parseFloat(data.volume) * 0.48,
-        price: parseFloat(data.lastPrice)
-      };
-    } catch (error) {
-      console.error('Binance API error:', error);
-      throw error;
-    }
-  };
-
-  // Kraken API
-  const fetchKrakenData = async () => {
-    try {
-      const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
-      const data = await response.json();
-      const ticker = data.result.XXRPZUSD;
-      
-      return {
-        volume: parseFloat(ticker.v[1]), // 24h volume
-        price: parseFloat(ticker.c[0]),
-        buyVolume: parseFloat(ticker.v[1]) * 0.51,
-        sellVolume: parseFloat(ticker.v[1]) * 0.49
-      };
-    } catch (error) {
-      console.error('Kraken API error:', error);
-      throw error;
-    }
-  };
-
-  // Coinbase API
-  const fetchCoinbaseData = async () => {
-    try {
-      const statsResponse = await fetch('https://api.exchange.coinbase.com/products/XRP-USD/stats');
-      const stats = await statsResponse.json();
-      
-      return {
-        volume: parseFloat(stats.volume),
-        price: parseFloat(stats.last),
-        buyVolume: parseFloat(stats.volume) * 0.51,
-        sellVolume: parseFloat(stats.volume) * 0.49
-      };
-    } catch (error) {
-      console.error('Coinbase API error:', error);
-      throw error;
-    }
-  };
-
-  // KuCoin API
-  const fetchKuCoinData = async () => {
-    try {
-      const response = await fetch('https://api.kucoin.com/api/v1/market/stats?symbol=XRP-USDT');
-      const data = await response.json();
-      const ticker = data.data;
-      
-      return {
-        volume: parseFloat(ticker.vol),
-        price: parseFloat(ticker.last),
-        buyVolume: parseFloat(ticker.vol) * 0.52,
-        sellVolume: parseFloat(ticker.vol) * 0.48
-      };
-    } catch (error) {
-      console.error('KuCoin API error:', error);
-      throw error;
-    }
-  };
-
-  // Gate.io API
-  const fetchGateData = async () => {
-    try {
-      const response = await fetch('https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XRP_USDT');
-      const data = await response.json();
-      const ticker = data[0];
-      
-      return {
-        volume: parseFloat(ticker.base_volume),
-        price: parseFloat(ticker.last),
-        buyVolume: parseFloat(ticker.base_volume) * 0.51,
-        sellVolume: parseFloat(ticker.base_volume) * 0.49
-      };
-    } catch (error) {
-      console.error('Gate.io API error:', error);
-      throw error;
-    }
-  };
-
-  // Bitfinex API
-  const fetchBitfinexData = async () => {
-    try {
-      const response = await fetch('https://api-pub.bitfinex.com/v2/ticker/tXRPUSD');
-      const data = await response.json();
-      
-      return {
-        volume: parseFloat(data[7]),
-        price: parseFloat(data[6]),
-        buyVolume: parseFloat(data[7]) * 0.51,
-        sellVolume: parseFloat(data[7]) * 0.49
-      };
-    } catch (error) {
-      console.error('Bitfinex API error:', error);
-      throw error;
-    }
-  };
-
-  // OKX API
-  const fetchOKXData = async () => {
-    try {
-      const response = await fetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
-      const data = await response.json();
-      const ticker = data.data[0];
-      
-      return {
-        volume: parseFloat(ticker.vol24h),
-        price: parseFloat(ticker.last),
-        buyVolume: parseFloat(ticker.vol24h) * 0.51,
-        sellVolume: parseFloat(ticker.vol24h) * 0.49
-      };
-    } catch (error) {
-      console.error('OKX API error:', error);
-      throw error;
-    }
-  };
-
-  // Bybit API
-  const fetchBybitData = async () => {
-    try {
-      const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
-      const data = await response.json();
-      const ticker = data.result.list[0];
-      
-      return {
-        volume: parseFloat(ticker.volume24h),
-        price: parseFloat(ticker.lastPrice),
-        buyVolume: parseFloat(ticker.volume24h) * 0.51,
-        sellVolume: parseFloat(ticker.volume24h) * 0.49
-      };
-    } catch (error) {
-      console.error('Bybit API error:', error);
-      throw error;
-    }
-  };
-
-  // Bitstamp API
-  const fetchBitstampData = async () => {
-    try {
-      const response = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
-      const data = await response.json();
-      
-      return {
-        volume: parseFloat(data.volume),
-        price: parseFloat(data.last),
-        buyVolume: parseFloat(data.volume) * 0.51,
-        sellVolume: parseFloat(data.volume) * 0.49
-      };
-    } catch (error) {
-      console.error('Bitstamp API error:', error);
-      throw error;
-    }
-  };
-
-  // CoinGecko API (Upbit ve diğer borsalar için fallback)
-  const fetchCoinGeckoData = async (exchangeId) => {
-    try {
-      const response = await fetch(`https://api.coingecko.com/api/v3/exchanges/${exchangeId}/tickers?coin_ids=ripple`);
-      const data = await response.json();
-      const xrpTicker = data.tickers.find(t => t.base === 'XRP' || t.coin_id === 'ripple');
-      
-      if (xrpTicker) {
-        return {
-          volume: parseFloat(xrpTicker.volume),
-          price: parseFloat(xrpTicker.last),
-          buyVolume: parseFloat(xrpTicker.volume) * 0.51,
-          sellVolume: parseFloat(xrpTicker.volume) * 0.49
-        };
+      const response = await fetch(`/api/exchange?exchange=${exchangeId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
-      throw new Error('XRP ticker not found');
+      const data = await response.json();
+      return data;
     } catch (error) {
-      console.error(`CoinGecko API error for ${exchangeId}:`, error);
+      console.error(`Error fetching ${exchangeId}:`, error);
       throw error;
     }
   };
@@ -220,70 +46,45 @@ const XRPCVDTracker = () => {
     try {
       // XRP fiyatını Binance'den al
       try {
-        const binancePrice = await fetchBinanceData();
+        const binancePrice = await fetchExchangeData('binance');
         setXrpPrice(binancePrice.price);
       } catch (error) {
-        newErrors.push('XRP fiyatı alınamadı');
+        newErrors.push(`Fiyat: ${error.message}`);
       }
 
       // Her borsa için veri çek
       const updatedExchanges = await Promise.all(
         exchanges.map(async (exchange) => {
           try {
-            let data;
-            
-            switch (exchange.id) {
-              case 'binance':
-                data = await fetchBinanceData();
-                break;
-              case 'kraken':
-                data = await fetchKrakenData();
-                break;
-              case 'coinbase':
-                data = await fetchCoinbaseData();
-                break;
-              case 'kucoin':
-                data = await fetchKuCoinData();
-                break;
-              case 'gate':
-                data = await fetchGateData();
-                break;
-              case 'bitfinex':
-                data = await fetchBitfinexData();
-                break;
-              case 'okx':
-                data = await fetchOKXData();
-                break;
-              case 'bybit':
-                data = await fetchBybitData();
-                break;
-              case 'bitstamp':
-                data = await fetchBitstampData();
-                break;
-              case 'upbit':
-                // Upbit için CoinGecko fallback
-                data = await fetchCoinGeckoData('upbit');
-                break;
-              default:
-                throw new Error('Desteklenmeyen borsa');
+            const data = await fetchExchangeData(exchange.id);
+
+            // İlk çalıştırmada baseline ayarla (sıfır noktası)
+            let baseline = exchange.baseline;
+            if (baseline === null) {
+              // İlk veri - bu noktayı sıfır kabul et
+              baseline = data.buyVolume - data.sellVolume;
             }
 
-            // CVD hesapla (kümülatif delta)
-            const delta = data.buyVolume - data.sellVolume;
-            const previousCVD = exchange.cvd || 0;
-            const newCVD = previousCVD + delta;
+            // CVD = Mevcut delta - Baseline (böylece 0'dan başlar)
+            const currentDelta = data.buyVolume - data.sellVolume;
+            const cvdFromBaseline = currentDelta - baseline;
+
+            // Trend = Bir önceki güncellemeye göre değişim
+            const trend = cvdFromBaseline - (exchange.cvd || 0);
 
             return {
               ...exchange,
-              cvd: newCVD,
+              cvd: cvdFromBaseline,
               volume24h: data.volume,
               buyVolume: data.buyVolume,
               sellVolume: data.sellVolume,
-              trend: delta,
+              trend: trend,
+              baseline: baseline,
+              buyRatio: data.buyRatio || (data.buyVolume / data.volume),
               status: 'success'
             };
           } catch (error) {
-            newErrors.push(`${exchange.name}: Veri alınamadı`);
+            newErrors.push(`${exchange.name}: ${error.message}`);
             return {
               ...exchange,
               status: 'error'
@@ -294,9 +95,13 @@ const XRPCVDTracker = () => {
 
       setExchanges(updatedExchanges);
       setErrors(newErrors);
+      
+      if (!initialized) {
+        setInitialized(true);
+      }
 
       // Tarihsel veri kaydet
-      const timestamp = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      const timestamp = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setHistoricalData(prev => {
         const newData = [...prev, {
           time: timestamp,
@@ -308,8 +113,8 @@ const XRPCVDTracker = () => {
           }, {})
         }];
         
-        // Son 30 veri noktasını tut
-        return newData.slice(-30);
+        // Son 40 veri noktasını tut (daha uzun grafik için)
+        return newData.slice(-40);
       });
 
       setLastUpdate(new Date());
@@ -320,35 +125,37 @@ const XRPCVDTracker = () => {
     }
     
     setIsLoading(false);
-  }, [exchanges]);
+  }, [exchanges, initialized]);
 
   useEffect(() => {
     updateData();
-    const interval = setInterval(updateData, 30000); // Her 30 saniyede güncelle (API limitleri için)
+    const interval = setInterval(updateData, 30000); // Her 30 saniyede güncelle
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatNumber = (num) => {
-    if (num >= 1000000) {
+    if (Math.abs(num) >= 1000000) {
       return (num / 1000000).toFixed(2) + 'M';
-    } else if (num >= 1000) {
+    } else if (Math.abs(num) >= 1000) {
       return (num / 1000).toFixed(2) + 'K';
     }
     return num.toFixed(2);
   };
 
   const formatCurrency = (num) => {
-    return new Intl.NumberFormat('tr-TR', {
+    return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3
     }).format(num);
   };
 
   const totalCVD = exchanges.reduce((sum, ex) => sum + (ex.status === 'success' ? ex.cvd : 0), 0);
   const successfulExchanges = exchanges.filter(ex => ex.status === 'success');
+  const positiveCVD = exchanges.filter(ex => ex.status === 'success' && ex.cvd > 0).length;
+  const negativeCVD = exchanges.filter(ex => ex.status === 'success' && ex.cvd < 0).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
@@ -357,10 +164,10 @@ const XRPCVDTracker = () => {
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
-              <Activity className="w-10 h-10 text-blue-400" />
+              <Activity className="w-10 h-10 text-blue-400 animate-pulse" />
               <div>
                 <h1 className="text-3xl font-bold text-white">XRP CVD Takipçisi</h1>
-                <p className="text-blue-300 text-sm">Gerçek Borsa Verileri - Canlı Kumülatif Hacim Delta</p>
+                <p className="text-blue-300 text-sm">🔴 CANLI - Gerçek Borsa API Verileri</p>
               </div>
             </div>
             <button
@@ -379,7 +186,7 @@ const XRPCVDTracker = () => {
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-red-300">
-                  <div className="font-semibold mb-1">API Hataları:</div>
+                  <div className="font-semibold mb-1">Bağlantı Hataları:</div>
                   {errors.map((error, idx) => (
                     <div key={idx}>• {error}</div>
                   ))}
@@ -388,42 +195,60 @@ const XRPCVDTracker = () => {
             </div>
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-700/50 rounded-xl p-4">
-              <div className="text-blue-400 text-sm mb-1">XRP Fiyatı (Canlı)</div>
+              <div className="text-blue-400 text-sm mb-1">XRP Fiyatı</div>
               <div className="text-2xl font-bold text-white">{formatCurrency(xrpPrice)}</div>
             </div>
             <div className="bg-slate-700/50 rounded-xl p-4">
               <div className="text-blue-400 text-sm mb-1">Toplam CVD</div>
-              <div className="text-2xl font-bold text-white">{formatNumber(totalCVD)} XRP</div>
+              <div className={`text-2xl font-bold ${totalCVD >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {totalCVD >= 0 ? '+' : ''}{formatNumber(totalCVD)}
+              </div>
             </div>
             <div className="bg-slate-700/50 rounded-xl p-4">
-              <div className="text-blue-400 text-sm mb-1">Son Güncelleme</div>
+              <div className="text-blue-400 text-sm mb-1">Piyasa Duygusu</div>
+              <div className="flex gap-2 items-center">
+                <span className="text-green-400 text-sm">↑{positiveCVD}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-red-400 text-sm">↓{negativeCVD}</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">Alım vs Satım</div>
+            </div>
+            <div className="bg-slate-700/50 rounded-xl p-4">
+              <div className="text-blue-400 text-sm mb-1">Durum</div>
               <div className="text-lg font-semibold text-white">
                 {lastUpdate.toLocaleTimeString('tr-TR')}
               </div>
               <div className="text-xs text-blue-300 mt-1">
-                Başarılı: {successfulExchanges.length}/{exchanges.length} borsa
+                {successfulExchanges.length}/{exchanges.length} borsa aktif
               </div>
             </div>
           </div>
         </div>
 
         {/* CVD Grafik */}
-        {historicalData.length > 0 && (
+        {historicalData.length > 1 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">CVD Zaman Serisi (Milyon XRP)</h2>
+            <h2 className="text-xl font-bold text-white mb-4">CVD Zaman Serisi (Milyon XRP) - Başlangıç: 0</h2>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={historicalData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="time" stroke="#94a3b8" />
+                <XAxis 
+                  dataKey="time" 
+                  stroke="#94a3b8" 
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
                 <YAxis stroke="#94a3b8" />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
                   labelStyle={{ color: '#cbd5e1' }}
+                  formatter={(value) => `${value.toFixed(2)}M XRP`}
                 />
                 <Legend />
-                {successfulExchanges.slice(0, 5).map(ex => (
+                {successfulExchanges.map(ex => (
                   <Line 
                     key={ex.id}
                     type="monotone" 
@@ -431,6 +256,7 @@ const XRPCVDTracker = () => {
                     stroke={ex.color}
                     strokeWidth={2}
                     dot={false}
+                    connectNulls
                   />
                 ))}
               </LineChart>
@@ -442,7 +268,7 @@ const XRPCVDTracker = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {exchanges.map((exchange) => {
             const cvdValue = exchange.cvd;
-            const isPositive = exchange.trend >= 0;
+            const isPositive = cvdValue >= 0;
             const buyPercentage = exchange.volume24h > 0 ? (exchange.buyVolume / exchange.volume24h) * 100 : 50;
             
             return (
@@ -462,10 +288,13 @@ const XRPCVDTracker = () => {
                     />
                     <h3 className="text-lg font-bold text-white">{exchange.name}</h3>
                     {exchange.status === 'loading' && (
-                      <span className="text-xs text-blue-400">Yükleniyor...</span>
+                      <span className="text-xs text-blue-400 animate-pulse">Yükleniyor...</span>
                     )}
                     {exchange.status === 'error' && (
-                      <span className="text-xs text-red-400">Hata</span>
+                      <span className="text-xs text-red-400">❌ Hata</span>
+                    )}
+                    {exchange.status === 'success' && (
+                      <span className="text-xs text-green-400">✓</span>
                     )}
                   </div>
                   {exchange.status === 'success' && (
@@ -482,9 +311,9 @@ const XRPCVDTracker = () => {
                   <>
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div>
-                        <div className="text-blue-400 text-xs mb-1">CVD</div>
-                        <div className={`text-xl font-bold ${cvdValue >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {cvdValue >= 0 ? '+' : ''}{formatNumber(cvdValue)}
+                        <div className="text-blue-400 text-xs mb-1">CVD (0'dan itibaren)</div>
+                        <div className={`text-xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {isPositive ? '+' : ''}{formatNumber(cvdValue)}
                         </div>
                       </div>
                       <div>
@@ -496,20 +325,26 @@ const XRPCVDTracker = () => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-green-400">Alım: {formatNumber(exchange.buyVolume)}</span>
-                        <span className="text-green-400">{buyPercentage.toFixed(1)}%</span>
+                        <span className="text-green-400">{buyPercentage.toFixed(2)}%</span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
                         <div 
-                          className="bg-green-500 h-full transition-all duration-500"
+                          className="bg-gradient-to-r from-green-500 to-green-400 h-full transition-all duration-500"
                           style={{ width: `${buyPercentage}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-red-400">Satım: {formatNumber(exchange.sellVolume)}</span>
-                        <span className="text-red-400">{(100 - buyPercentage).toFixed(1)}%</span>
+                        <span className="text-red-400">{(100 - buyPercentage).toFixed(2)}%</span>
                       </div>
                     </div>
                   </>
+                )}
+                
+                {exchange.status === 'error' && (
+                  <div className="text-center text-gray-400 py-4">
+                    Bağlantı kurulamadı
+                  </div>
                 )}
               </div>
             );
@@ -519,12 +354,12 @@ const XRPCVDTracker = () => {
         {/* CVD Bar Chart */}
         {successfulExchanges.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında CVD Karşılaştırması</h2>
+            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında CVD (Başlangıç: 0)</h2>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={successfulExchanges.map(ex => ({ 
                 name: ex.name, 
                 CVD: ex.cvd / 1000000,
-                color: ex.color 
+                fill: ex.cvd >= 0 ? '#10b981' : '#ef4444'
               }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" stroke="#94a3b8" angle={-45} textAnchor="end" height={100} />
@@ -532,9 +367,13 @@ const XRPCVDTracker = () => {
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
                   labelStyle={{ color: '#cbd5e1' }}
-                  formatter={(value) => [`${value.toFixed(2)}M XRP`, 'CVD']}
+                  formatter={(value) => [`${value >= 0 ? '+' : ''}${value.toFixed(2)}M XRP`, 'CVD']}
                 />
-                <Bar dataKey="CVD" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="CVD" radius={[8, 8, 0, 0]}>
+                  {successfulExchanges.map((entry, index) => (
+                    <rect key={`cell-${index}`} fill={entry.cvd >= 0 ? '#10b981' : '#ef4444'} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -542,17 +381,19 @@ const XRPCVDTracker = () => {
 
         {/* Footer Bilgi */}
         <div className="mt-6 bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-blue-500/20">
-          <div className="text-blue-400 text-sm">
-            <p className="mb-2">
-              <strong>🔴 CANLI VERİ:</strong> Bu uygulama gerçek borsa API'lerinden canlı veri çekmektedir.
+          <div className="text-blue-400 text-sm space-y-2">
+            <p>
+              <strong>🔴 CANLI VERİ:</strong> Vercel Serverless Functions üzerinden gerçek borsa API'lerinden anlık veri çekilmektedir.
             </p>
-            <p className="mb-2">
-              <strong>CVD (Cumulative Volume Delta):</strong> Alım ve satım hacimleri arasındaki farkın kümülatif toplamı.
+            <p>
+              <strong>CVD Hesaplama:</strong> Her borsa için alım-satım dengesi gerçek trades verisinden hesaplanır. 
+              Uygulama açıldığı an sıfır (0) kabul edilir ve buradan itibaren değişimler takip edilir.
             </p>
-            <p className="text-xs text-blue-300 mt-3">
+            <p className="text-xs text-blue-300">
+              • Pozitif CVD (+) = Alım baskısı güçlü (Yükseliş eğilimi)<br/>
+              • Negatif CVD (-) = Satım baskısı güçlü (Düşüş eğilimi)<br/>
               • Veriler 30 saniyede bir otomatik güncellenir<br/>
-              • Bazı borsalar API limitleri nedeniyle gecikmeli güncellenebilir<br/>
-              • Alım/satım hacmi dağılımı borsa orderbook'larından hesaplanır
+              • Grafik son 40 veri noktasını gösterir (~20 dakika)
             </p>
           </div>
         </div>
