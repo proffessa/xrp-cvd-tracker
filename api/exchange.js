@@ -1,4 +1,4 @@
-// Vercel Serverless Function - XRP Exchange Data (SAFE VERSION)
+// DEBUG VERSION - See actual Binance response
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -13,6 +13,24 @@ export default async function handler(req, res) {
 
   const { exchange } = req.query;
 
+  // DEBUG MODE - Show raw response
+  if (exchange === 'debug') {
+    try {
+      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+      const json = await response.json();
+      return res.status(200).json({
+        debug: true,
+        rawResponse: json,
+        volume: json.volume,
+        volumeType: typeof json.volume,
+        lastPrice: json.lastPrice,
+        priceType: typeof json.lastPrice
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
   if (!exchange) {
     return res.status(400).json({ error: 'Exchange parameter is required' });
   }
@@ -21,15 +39,41 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
-      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT', {
-        headers: { 'Accept': 'application/json' }
-      });
+      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+      
+      if (!response.ok) {
+        throw new Error(`Binance API returned ${response.status}`);
+      }
+      
       const json = await response.json();
       
+      // Check if response has expected fields
+      if (!json.volume || !json.lastPrice) {
+        return res.status(500).json({ 
+          error: 'Missing fields in Binance response',
+          receivedFields: Object.keys(json),
+          volume: json.volume,
+          lastPrice: json.lastPrice
+        });
+      }
+      
       const volume = parseFloat(json.volume);
+      const price = parseFloat(json.lastPrice);
+      
+      // Validate numbers
+      if (isNaN(volume) || isNaN(price) || volume <= 0 || price <= 0) {
+        return res.status(500).json({ 
+          error: 'Invalid numbers from Binance',
+          volume: json.volume,
+          price: json.lastPrice,
+          volumeParsed: volume,
+          priceParsed: price
+        });
+      }
+      
       data = {
         volume: volume,
-        price: parseFloat(json.lastPrice),
+        price: price,
         buyVolume: volume * 0.508,
         sellVolume: volume * 0.492
       };
@@ -44,10 +88,15 @@ export default async function handler(req, res) {
       
       const ticker = json.result.XXRPZUSD;
       const volume = parseFloat(ticker.v[1]);
+      const price = parseFloat(ticker.c[0]);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Kraken data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(ticker.c[0]),
+        price: price,
         buyVolume: volume * 0.505,
         sellVolume: volume * 0.495
       };
@@ -57,10 +106,15 @@ export default async function handler(req, res) {
       const json = await response.json();
       
       const volume = parseFloat(json.volume);
+      const price = parseFloat(json.last);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Coinbase data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(json.last),
+        price: price,
         buyVolume: volume * 0.498,
         sellVolume: volume * 0.502
       };
@@ -75,10 +129,15 @@ export default async function handler(req, res) {
       
       const ticker = json.data;
       const volume = parseFloat(ticker.vol);
+      const price = parseFloat(ticker.last);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid KuCoin data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(ticker.last),
+        price: price,
         buyVolume: volume * 0.51,
         sellVolume: volume * 0.49
       };
@@ -93,10 +152,15 @@ export default async function handler(req, res) {
       
       const ticker = json[0];
       const volume = parseFloat(ticker.base_volume);
+      const price = parseFloat(ticker.last);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Gate.io data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(ticker.last),
+        price: price,
         buyVolume: volume * 0.503,
         sellVolume: volume * 0.497
       };
@@ -111,10 +175,15 @@ export default async function handler(req, res) {
       
       const ticker = json.data[0];
       const volume = parseFloat(ticker.vol24h);
+      const price = parseFloat(ticker.last);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid OKX data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(ticker.last),
+        price: price,
         buyVolume: volume * 0.506,
         sellVolume: volume * 0.494
       };
@@ -129,10 +198,15 @@ export default async function handler(req, res) {
       
       const ticker = json.result.list[0];
       const volume = parseFloat(ticker.volume24h);
+      const price = parseFloat(ticker.lastPrice);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Bybit data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(ticker.lastPrice),
+        price: price,
         buyVolume: volume * 0.508,
         sellVolume: volume * 0.492
       };
@@ -142,10 +216,15 @@ export default async function handler(req, res) {
       const json = await response.json();
       
       const volume = parseFloat(json.volume);
+      const price = parseFloat(json.last);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Bitstamp data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(json.last),
+        price: price,
         buyVolume: volume * 0.499,
         sellVolume: volume * 0.501
       };
@@ -159,10 +238,15 @@ export default async function handler(req, res) {
       }
       
       const volume = parseFloat(json[7]);
+      const price = parseFloat(json[6]);
+      
+      if (isNaN(volume) || isNaN(price)) {
+        throw new Error('Invalid Bitfinex data');
+      }
       
       data = {
         volume: volume,
-        price: parseFloat(json[6]),
+        price: price,
         buyVolume: volume * 0.502,
         sellVolume: volume * 0.498
       };
@@ -182,6 +266,10 @@ export default async function handler(req, res) {
       const krwToUsd = 0.00075;
       const priceUsd = parseFloat(ticker.trade_price) * krwToUsd;
       
+      if (isNaN(volume) || isNaN(priceUsd)) {
+        throw new Error('Invalid Upbit data');
+      }
+      
       data = {
         volume: volume,
         price: priceUsd,
@@ -191,11 +279,6 @@ export default async function handler(req, res) {
     }
     else {
       return res.status(400).json({ error: `Unknown exchange: ${exchange}` });
-    }
-
-    // Veriyi kontrol et
-    if (!data || isNaN(data.volume) || isNaN(data.price)) {
-      throw new Error('Invalid data received from exchange');
     }
 
     return res.status(200).json(data);
