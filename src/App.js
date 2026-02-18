@@ -221,6 +221,7 @@ const XRPCVDTracker = () => {
     }
     
     setIsLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exchanges, initialized, xrpPrice]);
 
   useEffect(() => {
