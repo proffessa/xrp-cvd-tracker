@@ -1,20 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } from 'lucide-react';
 
 const XRPCVDTracker = () => {
   const [exchanges, setExchanges] = useState([
-    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F0B90B', status: 'loading', baseline: null, price: 0 },
-    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0066FF', status: 'loading', baseline: null, price: 0 },
-    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading', baseline: null, price: 0 },
-    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading', baseline: null, price: 0 },
-    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16C784', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00D395', status: 'loading', baseline: null, price: 0 },
-    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF6B6B', status: 'loading', baseline: null, price: 0 },
-    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF0080', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FFA500', status: 'loading', baseline: null, price: 0 }
+    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF0000', status: 'loading', price: 0 },
+    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0000FF', status: 'loading', price: 0 },
+    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00FF00', status: 'loading', price: 0 },
+    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FFFF00', status: 'loading', price: 0 },
+    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#8000FF', status: 'loading', price: 0 },
+    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF8000', status: 'loading', price: 0 },
+    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00FFFF', status: 'loading', price: 0 },
+    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF00FF', status: 'loading', price: 0 },
+    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#654321', status: 'loading', price: 0 },
+    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#000000', status: 'loading', price: 0 }
   ]);
+  
+  // Use ref to persist baselines across renders
+  const baselinesRef = useRef({});
   
   const [historicalData, setHistoricalData] = useState([]);
   const [xrpPrice, setXrpPrice] = useState(0);
@@ -25,7 +28,6 @@ const XRPCVDTracker = () => {
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
 
-  // Fetch exchange data from API
   const fetchExchangeData = async (exchangeId) => {
     try {
       const response = await fetch(`/api/exchange?exchange=${exchangeId}`);
@@ -40,7 +42,6 @@ const XRPCVDTracker = () => {
     }
   };
 
-  // Save CVD data to Supabase
   const saveCVDData = async (exchangesData, price) => {
     try {
       const response = await fetch('/api/save-cvd', {
@@ -69,7 +70,6 @@ const XRPCVDTracker = () => {
     }
   };
 
-  // Load historical data from Supabase
   const loadHistoricalData = async () => {
     try {
       const response = await fetch('/api/get-history?limit=100&hours=2');
@@ -80,7 +80,6 @@ const XRPCVDTracker = () => {
       const { history, latest } = await response.json();
 
       if (history && history.length > 0) {
-        // Group data by timestamp
         const groupedData = {};
         history.forEach(record => {
           const time = new Date(record.timestamp).toLocaleTimeString('tr-TR', { 
@@ -105,19 +104,9 @@ const XRPCVDTracker = () => {
 
         // Load baselines from latest data
         if (latest && latest.length > 0) {
-          setExchanges(prevExchanges => 
-            prevExchanges.map(ex => {
-              const latestEx = latest.find(l => l.exchange === ex.id);
-              if (latestEx) {
-                return {
-                  ...ex,
-                  baseline: latestEx.baseline,
-                  cvd: latestEx.cvd
-                };
-              }
-              return ex;
-            })
-          );
+          latest.forEach(item => {
+            baselinesRef.current[item.exchange] = item.baseline;
+          });
         }
       }
     } catch (error) {
@@ -126,16 +115,17 @@ const XRPCVDTracker = () => {
     }
   };
 
-  // Update data from exchanges
-  const updateData = useCallback(async () => {
+  const updateData = async () => {
     setIsLoading(true);
     const newErrors = [];
     
     try {
-      // Get XRP price from Binance
+      // Get XRP price
+      let currentPrice = xrpPrice;
       try {
         const binancePrice = await fetchExchangeData('binance');
-        setXrpPrice(binancePrice.price);
+        currentPrice = binancePrice.price;
+        setXrpPrice(currentPrice);
       } catch (error) {
         newErrors.push(`Fiyat: ${error.message}`);
       }
@@ -146,17 +136,15 @@ const XRPCVDTracker = () => {
           try {
             const data = await fetchExchangeData(exchange.id);
 
-            // Set baseline on first run
-            let baseline = exchange.baseline;
-            if (baseline === null) {
-              baseline = data.buyVolume - data.sellVolume;
+            // Get or set baseline using ref
+            if (!baselinesRef.current[exchange.id]) {
+              baselinesRef.current[exchange.id] = data.buyVolume - data.sellVolume;
+              console.log(`[${exchange.id}] Initial baseline: ${baselinesRef.current[exchange.id]}`);
             }
 
-            // Calculate CVD from baseline
+            const baseline = baselinesRef.current[exchange.id];
             const currentDelta = data.buyVolume - data.sellVolume;
             const cvdFromBaseline = currentDelta - baseline;
-
-            // Calculate trend
             const trend = cvdFromBaseline - (exchange.cvd || 0);
 
             return {
@@ -167,7 +155,6 @@ const XRPCVDTracker = () => {
               sellVolume: data.sellVolume,
               price: data.price,
               trend: trend,
-              baseline: baseline,
               buyRatio: data.buyVolume / data.volume,
               status: 'success'
             };
@@ -190,9 +177,13 @@ const XRPCVDTracker = () => {
       }
 
       // Save to database
-      await saveCVDData(updatedExchanges, xrpPrice);
+      const exchangesWithBaseline = updatedExchanges.map(ex => ({
+        ...ex,
+        baseline: baselinesRef.current[ex.id] || 0
+      }));
+      await saveCVDData(exchangesWithBaseline, currentPrice);
 
-      // Update local historical data
+      // Update historical data
       const timestamp = new Date().toLocaleTimeString('tr-TR', { 
         hour: '2-digit', 
         minute: '2-digit', 
@@ -210,7 +201,7 @@ const XRPCVDTracker = () => {
           }, {})
         }];
         
-        return newData.slice(-100); // Keep last 100 points
+        return newData.slice(-100);
       });
 
       setLastUpdate(new Date());
@@ -221,14 +212,12 @@ const XRPCVDTracker = () => {
     }
     
     setIsLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exchanges, initialized, xrpPrice]);
+  };
 
   useEffect(() => {
     updateData();
     const interval = setInterval(updateData, 30000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatNumber = (num) => {
@@ -285,7 +274,6 @@ const XRPCVDTracker = () => {
             </button>
           </div>
           
-          {/* Error Display */}
           {errors.length > 0 && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
               <div className="flex items-start gap-2">
@@ -361,7 +349,7 @@ const XRPCVDTracker = () => {
                     type="monotone" 
                     dataKey={ex.name} 
                     stroke={ex.color}
-                    strokeWidth={2}
+                    strokeWidth={3}
                     dot={false}
                     connectNulls
                   />
@@ -491,17 +479,16 @@ const XRPCVDTracker = () => {
           <div className="text-blue-400 text-sm space-y-2">
             <p>
               <strong>🗄️ KALICI VERİ SAKLAMA:</strong> CVD verileri Supabase PostgreSQL veritabanında saklanıyor. 
-              Sayfa yenilense bile grafik devam eder. {dbConnected ? '✅ Bağlı' : '❌ Bağlantı yok'}
+              {dbConnected ? ' ✅ Bağlı' : ' ❌ Bağlantı yok'}
             </p>
             <p>
               <strong>🔴 CANLI VERİ:</strong> Her borsa kendi API'sinden gerçek veri çekiyor.
-              Fiyat değişimlerine göre alım/satım oranları hesaplanıyor.
+              Baseline her 30 saniyede korunuyor.
             </p>
             <p className="text-xs text-blue-300">
               • CVD her 30 saniyede güncellenir ve veritabanına kaydedilir<br/>
-              • Son 100 veri noktası grafikte gösterilir (~50 dakika)<br/>
-              • Veriler aylarca saklanır (500MB kapasite)<br/>
-              • Farklı cihazlardan aynı grafiği görebilirsiniz
+              • Baseline değerleri bellekte (useRef) saklanır - sıfırlanmaz<br/>
+              • Son 100 veri noktası grafikte gösterilir (~50 dakika)
             </p>
           </div>
         </div>
