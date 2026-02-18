@@ -1,6 +1,5 @@
-// api/exchange.js - Exchange API with Supabase integration
+// api/exchange.js - Fixed with fallback for blocked exchanges
 export default async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -21,42 +20,28 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
+      // Binance engelliyse CoinGecko'dan çek
       try {
-        const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT', {
-          headers: { 'Accept': 'application/json' }
-        });
+        const response = await fetch('https://api.coingecko.com/api/v3/exchanges/binance/tickers?coin_ids=ripple&include_exchange_logo=false');
+        const json = await response.json();
         
-        if (response.status === 451) {
-          const altResponse = await fetch('https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
-          if (!altResponse.ok) throw new Error('Binance blocked');
-          const json = await altResponse.json();
-          const volume = parseFloat(json.volume);
-          const price = parseFloat(json.lastPrice);
-          const priceChange = parseFloat(json.priceChangePercent);
-          const buyRatio = 0.50 + (priceChange / 100 * 0.5);
+        if (json.tickers && json.tickers.length > 0) {
+          const ticker = json.tickers.find(t => t.target === 'USDT' && t.base === 'XRP') || json.tickers[0];
+          const volume = parseFloat(ticker.volume);
+          const price = parseFloat(ticker.last);
+          const trustScore = ticker.trust_score === 'green' ? 0.52 : 0.50;
+          
           data = {
             volume: volume,
             price: price,
-            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+            buyVolume: volume * trustScore,
+            sellVolume: volume * (1 - trustScore)
           };
-        } else if (!response.ok) {
-          throw new Error(`Binance: ${response.status}`);
         } else {
-          const json = await response.json();
-          const volume = parseFloat(json.volume);
-          const price = parseFloat(json.lastPrice);
-          const priceChange = parseFloat(json.priceChangePercent);
-          const buyRatio = 0.50 + (priceChange / 100 * 0.5);
-          data = {
-            volume: volume,
-            price: price,
-            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
-          };
+          throw new Error('No data from CoinGecko');
         }
       } catch (error) {
-        throw new Error(`Binance: ${error.message}`);
+        throw new Error(`Binance unavailable: ${error.message}`);
       }
     }
     else if (exchange === 'kraken') {
@@ -66,11 +51,15 @@ export default async function handler(req, res) {
       const ticker = json.result.XXRPZUSD || json.result.XRPUSD;
       const volume = parseFloat(ticker.v[1]);
       const price = parseFloat(ticker.c[0]);
+      const open = parseFloat(ticker.o);
+      const priceChange = ((price - open) / open);
+      const buyRatio = 0.50 + (priceChange * 0.3);
+      
       data = {
         volume: volume,
         price: price,
-        buyVolume: volume * 0.505,
-        sellVolume: volume * 0.495
+        buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+        sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
       };
     }
     else if (exchange === 'coinbase') {
@@ -79,8 +68,9 @@ export default async function handler(req, res) {
       const volume = parseFloat(json.volume);
       const price = parseFloat(json.last);
       const open = parseFloat(json.open);
-      const priceChange = ((price - open) / open) * 100;
-      const buyRatio = 0.50 + (priceChange * 0.5);
+      const priceChange = ((price - open) / open);
+      const buyRatio = 0.50 + (priceChange * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -96,7 +86,8 @@ export default async function handler(req, res) {
       const volume = parseFloat(ticker.vol);
       const price = parseFloat(ticker.last);
       const changeRate = parseFloat(ticker.changeRate);
-      const buyRatio = 0.50 + (changeRate * 0.5);
+      const buyRatio = 0.50 + (changeRate * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -112,7 +103,8 @@ export default async function handler(req, res) {
       const volume = parseFloat(ticker.base_volume);
       const price = parseFloat(ticker.last);
       const changePercent = parseFloat(ticker.change_percentage);
-      const buyRatio = 0.50 + (changePercent / 100 * 0.5);
+      const buyRatio = 0.50 + (changePercent / 100 * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -127,22 +119,10 @@ export default async function handler(req, res) {
       const ticker = json.data[0];
       const volume = parseFloat(ticker.vol24h);
       const price = parseFloat(ticker.last);
-      data = {
-        volume: volume,
-        price: price,
-        buyVolume: volume * 0.506,
-        sellVolume: volume * 0.494
-      };
-    }
-    else if (exchange === 'bybit') {
-      const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
-      const json = await response.json();
-      if (json.retCode !== 0) throw new Error(json.retMsg);
-      const ticker = json.result.list[0];
-      const volume = parseFloat(ticker.volume24h);
-      const price = parseFloat(ticker.lastPrice);
-      const priceChange = parseFloat(ticker.price24hPcnt);
-      const buyRatio = 0.50 + (priceChange * 0.5);
+      const open = parseFloat(ticker.open24h);
+      const priceChange = ((price - open) / open);
+      const buyRatio = 0.50 + (priceChange * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -150,14 +130,40 @@ export default async function handler(req, res) {
         sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
       };
     }
+    else if (exchange === 'bybit') {
+      // Bybit da CoinGecko'dan çek
+      try {
+        const response = await fetch('https://api.coingecko.com/api/v3/exchanges/bybit_spot/tickers?coin_ids=ripple&include_exchange_logo=false');
+        const json = await response.json();
+        
+        if (json.tickers && json.tickers.length > 0) {
+          const ticker = json.tickers.find(t => t.target === 'USDT' && t.base === 'XRP') || json.tickers[0];
+          const volume = parseFloat(ticker.volume);
+          const price = parseFloat(ticker.last);
+          const trustScore = ticker.trust_score === 'green' ? 0.51 : 0.50;
+          
+          data = {
+            volume: volume,
+            price: price,
+            buyVolume: volume * trustScore,
+            sellVolume: volume * (1 - trustScore)
+          };
+        } else {
+          throw new Error('No data from CoinGecko');
+        }
+      } catch (error) {
+        throw new Error(`Bybit unavailable: ${error.message}`);
+      }
+    }
     else if (exchange === 'bitstamp') {
       const response = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
       const json = await response.json();
       const volume = parseFloat(json.volume);
       const price = parseFloat(json.last);
       const open = parseFloat(json.open);
-      const priceChange = ((price - open) / open) * 100;
-      const buyRatio = 0.50 + (priceChange * 0.5);
+      const priceChange = ((price - open) / open);
+      const buyRatio = 0.50 + (priceChange * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -172,7 +178,9 @@ export default async function handler(req, res) {
       const volume = parseFloat(json[7]);
       const price = parseFloat(json[6]);
       const dailyChange = parseFloat(json[5]);
-      const buyRatio = 0.50 + (dailyChange * 0.5);
+      const dailyChangePercent = parseFloat(json[4]);
+      const buyRatio = 0.50 + (dailyChangePercent * 0.3);
+      
       data = {
         volume: volume,
         price: price,
@@ -190,7 +198,8 @@ export default async function handler(req, res) {
       const changeRate = parseFloat(ticker.signed_change_rate);
       const krwToUsd = 0.00075;
       const priceUsd = priceKRW * krwToUsd;
-      const buyRatio = 0.50 + (changeRate * 0.5);
+      const buyRatio = 0.50 + (changeRate * 0.3);
+      
       data = {
         volume: volume,
         price: priceUsd,
@@ -203,7 +212,7 @@ export default async function handler(req, res) {
     }
 
     if (!data || isNaN(data.volume) || isNaN(data.price)) {
-      throw new Error('Invalid data');
+      throw new Error('Invalid data received');
     }
 
     return res.status(200).json(data);
