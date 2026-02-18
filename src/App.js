@@ -214,12 +214,14 @@ const XRPCVDTracker = () => {
     setIsLoading(false);
   };
 
+   eslint-disable react-hooks/exhaustive-deps 
   useEffect(() => {
     updateData();
     const interval = setInterval(updateData, 30000);
     return () => clearInterval(interval);
   }, []);
-
+   eslint-enable react-hooks/exhaustive-deps 
+  
   const formatNumber = (num) => {
     if (Math.abs(num) >= 1000000) {
       return (num / 1000000).toFixed(2) + 'M';
