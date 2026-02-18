@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } from 'lucide-react';
 
 const XRPCVDTracker = () => {
   const [exchanges, setExchanges] = useState([
-    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F3BA2F', status: 'loading', baseline: null },
-    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1E40AF', status: 'loading', baseline: null },
-    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading', baseline: null },
-    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading', baseline: null },
-    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading', baseline: null },
-    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16B157', status: 'loading', baseline: null },
-    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00AB66', status: 'loading', baseline: null },
-    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#17E3A5', status: 'loading', baseline: null },
-    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1A1A1A', status: 'loading', baseline: null },
-    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F7A600', status: 'loading', baseline: null }
+    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F3BA2F', status: 'loading', baseline: null, price: 0 },
+    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1E40AF', status: 'loading', baseline: null, price: 0 },
+    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading', baseline: null, price: 0 },
+    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading', baseline: null, price: 0 },
+    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading', baseline: null, price: 0 },
+    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16B157', status: 'loading', baseline: null, price: 0 },
+    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00AB66', status: 'loading', baseline: null, price: 0 },
+    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#17E3A5', status: 'loading', baseline: null, price: 0 },
+    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1A1A1A', status: 'loading', baseline: null, price: 0 },
+    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F7A600', status: 'loading', baseline: null, price: 0 }
   ]);
   
   const [historicalData, setHistoricalData] = useState([]);
@@ -22,8 +22,10 @@ const XRPCVDTracker = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState([]);
   const [initialized, setInitialized] = useState(false);
+  const [dbConnected, setDbConnected] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
 
-  // Vercel Serverless API'den veri çek
+  // Fetch exchange data from API
   const fetchExchangeData = async (exchangeId) => {
     try {
       const response = await fetch(`/api/exchange?exchange=${exchangeId}`);
@@ -34,17 +36,103 @@ const XRPCVDTracker = () => {
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error(`Error fetching ${exchangeId}:`, error);
       throw error;
     }
   };
 
+  // Save CVD data to Supabase
+  const saveCVDData = async (exchangesData, price) => {
+    try {
+      const response = await fetch('/api/save-cvd', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          exchanges: exchangesData,
+          xrpPrice: price
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save data');
+      }
+
+      const result = await response.json();
+      setDbConnected(true);
+      setSavedCount(prev => prev + result.saved);
+      return true;
+    } catch (error) {
+      console.error('Save error:', error);
+      setDbConnected(false);
+      return false;
+    }
+  };
+
+  // Load historical data from Supabase
+  const loadHistoricalData = async () => {
+    try {
+      const response = await fetch('/api/get-history?limit=100&hours=2');
+      if (!response.ok) {
+        throw new Error('Failed to load history');
+      }
+
+      const { history, latest } = await response.json();
+
+      if (history && history.length > 0) {
+        // Group data by timestamp
+        const groupedData = {};
+        history.forEach(record => {
+          const time = new Date(record.timestamp).toLocaleTimeString('tr-TR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          
+          if (!groupedData[time]) {
+            groupedData[time] = { time };
+          }
+          
+          const exchange = exchanges.find(ex => ex.id === record.exchange);
+          if (exchange) {
+            groupedData[time][exchange.name] = record.cvd / 1000000;
+          }
+        });
+
+        const formattedHistory = Object.values(groupedData);
+        setHistoricalData(formattedHistory);
+        setDbConnected(true);
+
+        // Load baselines from latest data
+        if (latest && latest.length > 0) {
+          setExchanges(prevExchanges => 
+            prevExchanges.map(ex => {
+              const latestEx = latest.find(l => l.exchange === ex.id);
+              if (latestEx) {
+                return {
+                  ...ex,
+                  baseline: latestEx.baseline,
+                  cvd: latestEx.cvd
+                };
+              }
+              return ex;
+            })
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Load history error:', error);
+      setDbConnected(false);
+    }
+  };
+
+  // Update data from exchanges
   const updateData = useCallback(async () => {
     setIsLoading(true);
     const newErrors = [];
     
     try {
-      // XRP fiyatını Binance'den al
+      // Get XRP price from Binance
       try {
         const binancePrice = await fetchExchangeData('binance');
         setXrpPrice(binancePrice.price);
@@ -52,24 +140,23 @@ const XRPCVDTracker = () => {
         newErrors.push(`Fiyat: ${error.message}`);
       }
 
-      // Her borsa için veri çek
+      // Fetch data from all exchanges
       const updatedExchanges = await Promise.all(
         exchanges.map(async (exchange) => {
           try {
             const data = await fetchExchangeData(exchange.id);
 
-            // İlk çalıştırmada baseline ayarla (sıfır noktası)
+            // Set baseline on first run
             let baseline = exchange.baseline;
             if (baseline === null) {
-              // İlk veri - bu noktayı sıfır kabul et
               baseline = data.buyVolume - data.sellVolume;
             }
 
-            // CVD = Mevcut delta - Baseline (böylece 0'dan başlar)
+            // Calculate CVD from baseline
             const currentDelta = data.buyVolume - data.sellVolume;
             const cvdFromBaseline = currentDelta - baseline;
 
-            // Trend = Bir önceki güncellemeye göre değişim
+            // Calculate trend
             const trend = cvdFromBaseline - (exchange.cvd || 0);
 
             return {
@@ -78,9 +165,10 @@ const XRPCVDTracker = () => {
               volume24h: data.volume,
               buyVolume: data.buyVolume,
               sellVolume: data.sellVolume,
+              price: data.price,
               trend: trend,
               baseline: baseline,
-              buyRatio: data.buyRatio || (data.buyVolume / data.volume),
+              buyRatio: data.buyVolume / data.volume,
               status: 'success'
             };
           } catch (error) {
@@ -98,38 +186,46 @@ const XRPCVDTracker = () => {
       
       if (!initialized) {
         setInitialized(true);
+        await loadHistoricalData();
       }
 
-      // Tarihsel veri kaydet
-      const timestamp = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      // Save to database
+      await saveCVDData(updatedExchanges, xrpPrice);
+
+      // Update local historical data
+      const timestamp = new Date().toLocaleTimeString('tr-TR', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+      });
+      
       setHistoricalData(prev => {
         const newData = [...prev, {
           time: timestamp,
           ...updatedExchanges.reduce((acc, ex) => {
             if (ex.status === 'success') {
-              acc[ex.name] = ex.cvd / 1000000; // Milyon cinsinden
+              acc[ex.name] = ex.cvd / 1000000;
             }
             return acc;
           }, {})
         }];
         
-        // Son 40 veri noktasını tut (daha uzun grafik için)
-        return newData.slice(-40);
+        return newData.slice(-100); // Keep last 100 points
       });
 
       setLastUpdate(new Date());
     } catch (error) {
-      console.error('Veri güncellenirken hata:', error);
+      console.error('Update error:', error);
       newErrors.push('Genel güncelleme hatası');
       setErrors(newErrors);
     }
     
     setIsLoading(false);
-  }, [exchanges, initialized]);
+  }, [exchanges, initialized, xrpPrice]);
 
   useEffect(() => {
     updateData();
-    const interval = setInterval(updateData, 30000); // Her 30 saniyede güncelle
+    const interval = setInterval(updateData, 30000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -167,7 +263,15 @@ const XRPCVDTracker = () => {
               <Activity className="w-10 h-10 text-blue-400 animate-pulse" />
               <div>
                 <h1 className="text-3xl font-bold text-white">XRP CVD Takipçisi</h1>
-                <p className="text-blue-300 text-sm">🔴 CANLI - Gerçek Borsa API Verileri</p>
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-blue-300 text-sm">🔴 CANLI - Gerçek Borsa Verileri</p>
+                  {dbConnected && (
+                    <div className="flex items-center gap-1 text-green-400 text-xs">
+                      <Database className="w-4 h-4" />
+                      <span>Veritabanı Bağlı ({savedCount} kayıt)</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <button
@@ -227,10 +331,12 @@ const XRPCVDTracker = () => {
           </div>
         </div>
 
-        {/* CVD Grafik */}
+        {/* CVD Chart */}
         {historicalData.length > 1 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">CVD Zaman Serisi (Milyon XRP) - Başlangıç: 0</h2>
+            <h2 className="text-xl font-bold text-white mb-4">
+              CVD Zaman Serisi (Milyon XRP) - {historicalData.length} veri noktası
+            </h2>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={historicalData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -264,7 +370,7 @@ const XRPCVDTracker = () => {
           </div>
         )}
 
-        {/* Borsa Kartları */}
+        {/* Exchange Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {exchanges.map((exchange) => {
             const cvdValue = exchange.cvd;
@@ -311,7 +417,7 @@ const XRPCVDTracker = () => {
                   <>
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div>
-                        <div className="text-blue-400 text-xs mb-1">CVD (0'dan itibaren)</div>
+                        <div className="text-blue-400 text-xs mb-1">CVD</div>
                         <div className={`text-xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {isPositive ? '+' : ''}{formatNumber(cvdValue)}
                         </div>
@@ -354,7 +460,7 @@ const XRPCVDTracker = () => {
         {/* CVD Bar Chart */}
         {successfulExchanges.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında CVD (Başlangıç: 0)</h2>
+            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında CVD Karşılaştırması</h2>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={successfulExchanges.map(ex => ({ 
                 name: ex.name, 
@@ -379,21 +485,22 @@ const XRPCVDTracker = () => {
           </div>
         )}
 
-        {/* Footer Bilgi */}
+        {/* Footer */}
         <div className="mt-6 bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-blue-500/20">
           <div className="text-blue-400 text-sm space-y-2">
             <p>
-              <strong>🔴 CANLI VERİ:</strong> Vercel Serverless Functions üzerinden gerçek borsa API'lerinden anlık veri çekilmektedir.
+              <strong>🗄️ KALICI VERİ SAKLAMA:</strong> CVD verileri Supabase PostgreSQL veritabanında saklanıyor. 
+              Sayfa yenilense bile grafik devam eder. {dbConnected ? '✅ Bağlı' : '❌ Bağlantı yok'}
             </p>
             <p>
-              <strong>CVD Hesaplama:</strong> Her borsa için alım-satım dengesi gerçek trades verisinden hesaplanır. 
-              Uygulama açıldığı an sıfır (0) kabul edilir ve buradan itibaren değişimler takip edilir.
+              <strong>🔴 CANLI VERİ:</strong> Her borsa kendi API'sinden gerçek veri çekiyor.
+              Fiyat değişimlerine göre alım/satım oranları hesaplanıyor.
             </p>
             <p className="text-xs text-blue-300">
-              • Pozitif CVD (+) = Alım baskısı güçlü (Yükseliş eğilimi)<br/>
-              • Negatif CVD (-) = Satım baskısı güçlü (Düşüş eğilimi)<br/>
-              • Veriler 30 saniyede bir otomatik güncellenir<br/>
-              • Grafik son 40 veri noktasını gösterir (~20 dakika)
+              • CVD her 30 saniyede güncellenir ve veritabanına kaydedilir<br/>
+              • Son 100 veri noktası grafikte gösterilir (~50 dakika)<br/>
+              • Veriler aylarca saklanır (500MB kapasite)<br/>
+              • Farklı cihazlardan aynı grafiği görebilirsiniz
             </p>
           </div>
         </div>
