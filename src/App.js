@@ -4,16 +4,16 @@ import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } 
 
 const XRPCVDTracker = () => {
   const [exchanges, setExchanges] = useState([
-    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F3BA2F', status: 'loading', baseline: null, price: 0 },
-    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1E40AF', status: 'loading', baseline: null, price: 0 },
+    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F0B90B', status: 'loading', baseline: null, price: 0 },
+    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0066FF', status: 'loading', baseline: null, price: 0 },
     { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#24AE8F', status: 'loading', baseline: null, price: 0 },
     { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#5741D9', status: 'loading', baseline: null, price: 0 },
     { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0052FF', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16B157', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00AB66', status: 'loading', baseline: null, price: 0 },
-    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#17E3A5', status: 'loading', baseline: null, price: 0 },
-    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#1A1A1A', status: 'loading', baseline: null, price: 0 },
-    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#F7A600', status: 'loading', baseline: null, price: 0 }
+    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#16C784', status: 'loading', baseline: null, price: 0 },
+    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00D395', status: 'loading', baseline: null, price: 0 },
+    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF6B6B', status: 'loading', baseline: null, price: 0 },
+    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF0080', status: 'loading', baseline: null, price: 0 },
+    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FFA500', status: 'loading', baseline: null, price: 0 }
   ]);
   
   const [historicalData, setHistoricalData] = useState([]);
