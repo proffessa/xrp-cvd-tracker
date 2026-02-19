@@ -89,16 +89,29 @@ const XRPCVDTracker = () => {
           });
           
           if (!groupedData[time]) {
-            groupedData[time] = { time };
+            groupedData[time] = { time, xrpPrice: 0, priceCount: 0 };
           }
           
           const exchange = exchanges.find(ex => ex.id === record.exchange);
           if (exchange) {
             groupedData[time][exchange.name] = record.cvd / 1000000;
+            // Average price from all exchanges for this timestamp
+            if (record.price && record.price > 0) {
+              groupedData[time].xrpPrice += record.price;
+              groupedData[time].priceCount += 1;
+            }
           }
         });
 
-        const formattedHistory = Object.values(groupedData);
+        // Calculate average price and clean up
+        const formattedHistory = Object.values(groupedData).map(item => {
+          if (item.priceCount > 0) {
+            item.xrpPrice = item.xrpPrice / item.priceCount;
+          }
+          delete item.priceCount;
+          return item;
+        });
+        
         setHistoricalData(formattedHistory);
         setDbConnected(true);
 
@@ -106,6 +119,7 @@ const XRPCVDTracker = () => {
         if (latest && latest.length > 0) {
           latest.forEach(item => {
             baselinesRef.current[item.exchange] = item.baseline;
+            console.log(`[DB] Loaded baseline for ${item.exchange}: ${item.baseline}`);
           });
         }
       }
@@ -137,15 +151,20 @@ const XRPCVDTracker = () => {
             const data = await fetchExchangeData(exchange.id);
 
             // Get or set baseline using ref
+            // IMPORTANT: Don't reset baseline if it's already loaded from database
             if (!baselinesRef.current[exchange.id]) {
               baselinesRef.current[exchange.id] = data.buyVolume - data.sellVolume;
-              console.log(`[${exchange.id}] Initial baseline: ${baselinesRef.current[exchange.id]}`);
+              console.log(`[${exchange.id}] NEW baseline: ${baselinesRef.current[exchange.id]}`);
+            } else {
+              console.log(`[${exchange.id}] EXISTING baseline: ${baselinesRef.current[exchange.id]}`);
             }
 
             const baseline = baselinesRef.current[exchange.id];
             const currentDelta = data.buyVolume - data.sellVolume;
             const cvdFromBaseline = currentDelta - baseline;
             const trend = cvdFromBaseline - (exchange.cvd || 0);
+
+            console.log(`[${exchange.id}] CVD: ${cvdFromBaseline.toFixed(2)}, Delta: ${currentDelta.toFixed(2)}, Baseline: ${baseline.toFixed(2)}`);
 
             return {
               ...exchange,
@@ -171,9 +190,27 @@ const XRPCVDTracker = () => {
       setExchanges(updatedExchanges);
       setErrors(newErrors);
       
+      // Load historical data on FIRST run BEFORE calculating CVD
       if (!initialized) {
-        setInitialized(true);
+        console.log('First run - loading historical data...');
         await loadHistoricalData();
+        setInitialized(true);
+        
+        // After loading baselines, recalculate CVD with correct baselines
+        const recalculatedExchanges = updatedExchanges.map(ex => {
+          if (ex.status === 'success' && baselinesRef.current[ex.id]) {
+            const currentDelta = ex.buyVolume - ex.sellVolume;
+            const cvdFromBaseline = currentDelta - baselinesRef.current[ex.id];
+            console.log(`[${ex.id}] RECALCULATED CVD: ${cvdFromBaseline.toFixed(2)} (was ${ex.cvd.toFixed(2)})`);
+            return {
+              ...ex,
+              cvd: cvdFromBaseline,
+              trend: cvdFromBaseline - 0 // First calculation, no previous cvd
+            };
+          }
+          return ex;
+        });
+        setExchanges(recalculatedExchanges);
       }
 
       // Save to database
@@ -193,6 +230,7 @@ const XRPCVDTracker = () => {
       setHistoricalData(prev => {
         const newData = [...prev, {
           time: timestamp,
+          xrpPrice: currentPrice, // Add XRP price
           ...updatedExchanges.reduce((acc, ex) => {
             if (ex.status === 'success') {
               acc[ex.name] = ex.cvd / 1000000;
@@ -321,11 +359,11 @@ const XRPCVDTracker = () => {
           </div>
         </div>
 
-        {/* CVD Chart */}
+        {/* CVD Chart with XRP Price */}
         {historicalData.length > 1 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
             <h2 className="text-xl font-bold text-white mb-4">
-              CVD Zaman Serisi (Milyon XRP) - {historicalData.length} veri noktası
+              CVD Zaman Serisi + XRP Fiyatı - {historicalData.length} veri noktası
             </h2>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={historicalData}>
@@ -337,26 +375,60 @@ const XRPCVDTracker = () => {
                   textAnchor="end"
                   height={80}
                 />
-                <YAxis stroke="#94a3b8" />
+                {/* Left Y-axis for CVD */}
+                <YAxis 
+                  yAxisId="left"
+                  stroke="#94a3b8" 
+                  label={{ value: 'CVD (Milyon XRP)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
+                />
+                {/* Right Y-axis for XRP Price */}
+                <YAxis 
+                  yAxisId="right"
+                  orientation="right"
+                  stroke="#FFD700"
+                  label={{ value: 'XRP Fiyatı ($)', angle: 90, position: 'insideRight', fill: '#FFD700' }}
+                />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
                   labelStyle={{ color: '#cbd5e1' }}
-                  formatter={(value) => `${value.toFixed(2)}M XRP`}
+                  formatter={(value, name) => {
+                    if (name === 'XRP Fiyatı') {
+                      return [`$${value.toFixed(3)}`, name];
+                    }
+                    return [`${value.toFixed(2)}M XRP`, name];
+                  }}
                 />
                 <Legend />
+                {/* CVD Lines - Left Axis */}
                 {successfulExchanges.map(ex => (
                   <Line 
                     key={ex.id}
+                    yAxisId="left"
                     type="monotone" 
                     dataKey={ex.name} 
                     stroke={ex.color}
-                    strokeWidth={3}
+                    strokeWidth={2}
                     dot={false}
                     connectNulls
                   />
                 ))}
+                {/* XRP Price Line - Right Axis */}
+                <Line 
+                  yAxisId="right"
+                  type="monotone" 
+                  dataKey="xrpPrice" 
+                  name="XRP Fiyatı"
+                  stroke="#FFD700"
+                  strokeWidth={3}
+                  dot={false}
+                  connectNulls
+                  strokeDasharray="5 5"
+                />
               </LineChart>
             </ResponsiveContainer>
+            <div className="mt-3 text-xs text-blue-300">
+              • Sol eksen: CVD (Milyon XRP) | Sağ eksen: XRP Fiyatı ($) - Kesikli çizgi
+            </div>
           </div>
         )}
 
