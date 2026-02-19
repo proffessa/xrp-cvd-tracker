@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
 import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } from 'lucide-react';
 
 const XRPCVDTracker = () => {
@@ -134,6 +134,14 @@ const XRPCVDTracker = () => {
     const newErrors = [];
     
     try {
+      // CRITICAL: Load historical data FIRST on initial load
+      if (!initialized) {
+        console.log('🔄 FIRST RUN - Loading baselines from database...');
+        await loadHistoricalData();
+        setInitialized(true);
+        console.log('✅ Baselines loaded:', baselinesRef.current);
+      }
+
       // Get XRP price
       let currentPrice = xrpPrice;
       try {
@@ -189,29 +197,6 @@ const XRPCVDTracker = () => {
 
       setExchanges(updatedExchanges);
       setErrors(newErrors);
-      
-      // Load historical data on FIRST run BEFORE calculating CVD
-      if (!initialized) {
-        console.log('First run - loading historical data...');
-        await loadHistoricalData();
-        setInitialized(true);
-        
-        // After loading baselines, recalculate CVD with correct baselines
-        const recalculatedExchanges = updatedExchanges.map(ex => {
-          if (ex.status === 'success' && baselinesRef.current[ex.id]) {
-            const currentDelta = ex.buyVolume - ex.sellVolume;
-            const cvdFromBaseline = currentDelta - baselinesRef.current[ex.id];
-            console.log(`[${ex.id}] RECALCULATED CVD: ${cvdFromBaseline.toFixed(2)} (was ${ex.cvd.toFixed(2)})`);
-            return {
-              ...ex,
-              cvd: cvdFromBaseline,
-              trend: cvdFromBaseline - 0 // First calculation, no previous cvd
-            };
-          }
-          return ex;
-        });
-        setExchanges(recalculatedExchanges);
-      }
 
       // Save to database
       const exchangesWithBaseline = updatedExchanges.map(ex => ({
@@ -365,7 +350,7 @@ const XRPCVDTracker = () => {
             <h2 className="text-xl font-bold text-white mb-4">
               CVD Zaman Serisi + XRP Fiyatı - {historicalData.length} veri noktası
             </h2>
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={500}>
               <LineChart data={historicalData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis 
@@ -375,18 +360,24 @@ const XRPCVDTracker = () => {
                   textAnchor="end"
                   height={80}
                 />
-                {/* Left Y-axis for CVD */}
+                {/* Left Y-axis for CVD - Auto scale */}
                 <YAxis 
                   yAxisId="left"
                   stroke="#94a3b8" 
                   label={{ value: 'CVD (Milyon XRP)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
+                  domain={['auto', 'auto']}
                 />
-                {/* Right Y-axis for XRP Price */}
+                {/* Right Y-axis for XRP Price - Auto scale from min to max */}
                 <YAxis 
                   yAxisId="right"
                   orientation="right"
                   stroke="#FFD700"
                   label={{ value: 'XRP Fiyatı ($)', angle: 90, position: 'insideRight', fill: '#FFD700' }}
+                  domain={[
+                    (dataMin) => (dataMin * 0.999).toFixed(3), // Slightly below min
+                    (dataMax) => (dataMax * 1.001).toFixed(3)  // Slightly above max
+                  ]}
+                  tickFormatter={(value) => `$${value.toFixed(3)}`}
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
@@ -399,6 +390,13 @@ const XRPCVDTracker = () => {
                   }}
                 />
                 <Legend />
+                {/* Interactive Brush for Zoom/Pan */}
+                <Brush 
+                  dataKey="time" 
+                  height={30} 
+                  stroke="#3b82f6"
+                  fill="#1e293b"
+                />
                 {/* CVD Lines - Left Axis */}
                 {successfulExchanges.map(ex => (
                   <Line 
@@ -426,8 +424,10 @@ const XRPCVDTracker = () => {
                 />
               </LineChart>
             </ResponsiveContainer>
-            <div className="mt-3 text-xs text-blue-300">
-              • Sol eksen: CVD (Milyon XRP) | Sağ eksen: XRP Fiyatı ($) - Kesikli çizgi
+            <div className="mt-3 text-xs text-blue-300 space-y-1">
+              <p>• Sol eksen: CVD (Milyon XRP) | Sağ eksen: XRP Fiyatı ($) - Kesikli altın çizgi</p>
+              <p>• Alt kısımdaki kaydırıcı ile zaman aralığını seçebilirsiniz (zoom/pan)</p>
+              <p>• Her iki eksen de otomatik min-max değerlere göre ölçeklenir</p>
             </div>
           </div>
         )}
