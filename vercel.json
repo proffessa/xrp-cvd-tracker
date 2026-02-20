@@ -1,9 +1,7 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron-collect-cvd",
-      "schedule": "*/1 * * * *"
+  "functions": {
+    "api/cron-collect-cvd.js": {
+      "maxDuration": 60
     }
-  ]
+  }
 }
-
