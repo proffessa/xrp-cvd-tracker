@@ -27,6 +27,9 @@ const XRPCVDTracker = () => {
   const [initialized, setInitialized] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
+  const [secondsElapsed, setSecondsElapsed] = useState(0);
+  const [nextUpdateIn, setNextUpdateIn] = useState(30);
+  const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 100 });
 
   const fetchExchangeData = async (exchangeId) => {
     try {
@@ -244,6 +247,29 @@ const XRPCVDTracker = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Countdown timer - updates every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSecondsElapsed(prev => prev + 1);
+      setNextUpdateIn(prev => {
+        if (prev <= 1) {
+          return 30; // Reset countdown
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Reset countdown when data updates
+  useEffect(() => {
+    setNextUpdateIn(30);
+    setSecondsElapsed(0);
+    // Keep brush showing all data
+    setBrushIndex({ startIndex: 0, endIndex: Math.max(0, historicalData.length - 1) });
+  }, [lastUpdate, historicalData.length]);
+
   const formatNumber = (num) => {
     if (Math.abs(num) >= 1000000) {
       return (num / 1000000).toFixed(2) + 'M';
@@ -396,6 +422,13 @@ const XRPCVDTracker = () => {
                   height={30} 
                   stroke="#3b82f6"
                   fill="#1e293b"
+                  startIndex={brushIndex.startIndex}
+                  endIndex={brushIndex.endIndex}
+                  onChange={(range) => {
+                    if (range?.startIndex !== undefined && range?.endIndex !== undefined) {
+                      setBrushIndex({ startIndex: range.startIndex, endIndex: range.endIndex });
+                    }
+                  }}
                 />
                 {/* CVD Lines - Left Axis */}
                 {successfulExchanges.map(ex => (
