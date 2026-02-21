@@ -29,7 +29,11 @@ export default async function handler(req, res) {
     // Fetch data from all exchanges
     for (const exchangeId of exchanges) {
       try {
-        const response = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/exchange?exchange=${exchangeId}`);
+        const baseUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}` 
+          : 'https://xrp-cvd-tracker.vercel.app';
+        
+        const response = await fetch(`${baseUrl}/api/exchange?exchange=${exchangeId}`);
         
         if (!response.ok) {
           console.error(`Failed to fetch ${exchangeId}: ${response.status}`);
