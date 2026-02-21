@@ -18,10 +18,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY
-    );
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase environment variables not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { exchanges, xrpPrice } = req.body;
 
@@ -38,7 +42,8 @@ export default async function handler(req, res) {
         volume: ex.volume24h,
         buy_volume: ex.buyVolume,
         sell_volume: ex.sellVolume,
-        price: ex.price || xrpPrice
+        price: ex.price || xrpPrice,
+        baseline: ex.baseline
       }));
 
     if (cvdRecords.length > 0) {

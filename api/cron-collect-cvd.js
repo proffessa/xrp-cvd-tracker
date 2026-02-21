@@ -13,10 +13,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY
-    );
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase environment variables not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const exchanges = [
       'binance', 'upbit', 'kucoin', 'kraken', 'coinbase',
@@ -50,7 +54,6 @@ export default async function handler(req, res) {
           .single();
 
         let baseline = latestData?.baseline;
-        let previousCVD = latestData?.cvd || 0;
 
         // If no baseline, set it now
         if (!baseline) {

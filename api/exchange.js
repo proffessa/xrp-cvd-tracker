@@ -20,27 +20,21 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
-      // Use Kraken as fallback for Binance data
-      try {
-        const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
-        const json = await response.json();
-        if (json.error?.length > 0) throw new Error(json.error[0]);
-        const ticker = json.result.XXRPZUSD || json.result.XRPUSD;
-        const volume = parseFloat(ticker.v[1]) * 30; // Scale up (Kraken smaller)
-        const price = parseFloat(ticker.c[0]);
-        const open = parseFloat(ticker.o);
-        const priceChange = ((price - open) / open);
-        const buyRatio = 0.50 + (priceChange * 0.3);
-        
-        data = {
-          volume: volume,
-          price: price,
-          buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-          sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
-        };
-      } catch (error) {
-        throw new Error(`Binance: ${error.message}`);
-      }
+      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+      const json = await response.json();
+      if (json.code) throw new Error(json.msg || 'Binance API error');
+      const volume = parseFloat(json.volume);
+      const price = parseFloat(json.lastPrice);
+      const open = parseFloat(json.openPrice);
+      const priceChange = (price - open) / open;
+      const buyRatio = 0.50 + (priceChange * 0.3);
+
+      data = {
+        volume: volume,
+        price: price,
+        buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+        sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+      };
     }
     else if (exchange === 'kraken') {
       const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
@@ -129,27 +123,22 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bybit') {
-      // Use OKX as fallback
-      try {
-        const response = await fetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
-        const json = await response.json();
-        if (json.code !== '0') throw new Error(json.msg);
-        const ticker = json.data[0];
-        const volume = parseFloat(ticker.vol24h) * 1.2; // Scale
-        const price = parseFloat(ticker.last);
-        const open = parseFloat(ticker.open24h);
-        const priceChange = ((price - open) / open);
-        const buyRatio = 0.50 + (priceChange * 0.3);
-        
-        data = {
-          volume: volume,
-          price: price,
-          buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-          sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
-        };
-      } catch (error) {
-        throw new Error(`Bybit: ${error.message}`);
-      }
+      const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
+      const json = await response.json();
+      if (json.retCode !== 0) throw new Error(json.retMsg || 'Bybit API error');
+      const ticker = json.result.list[0];
+      const volume = parseFloat(ticker.volume24h);
+      const price = parseFloat(ticker.lastPrice);
+      const open = parseFloat(ticker.prevPrice24h);
+      const priceChange = (price - open) / open;
+      const buyRatio = 0.50 + (priceChange * 0.3);
+
+      data = {
+        volume: volume,
+        price: price,
+        buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+        sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+      };
     }
     else if (exchange === 'bitstamp') {
       const response = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
@@ -191,7 +180,7 @@ export default async function handler(req, res) {
       const volume = parseFloat(ticker.acc_trade_volume_24h);
       const priceKRW = parseFloat(ticker.trade_price);
       const changeRate = parseFloat(ticker.signed_change_rate);
-      const krwToUsd = 0.00075;
+      const krwToUsd = 1 / 1400; // ~1400 KRW = 1 USD
       const priceUsd = priceKRW * krwToUsd;
       const buyRatio = 0.50 + (changeRate * 0.3);
       
