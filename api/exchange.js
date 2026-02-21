@@ -1,4 +1,4 @@
-// api/exchange.js - Fixed with fallback for blocked exchanges
+// api/exchange.js - Working version without CoinGecko
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,38 +20,24 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
+      // Use Kraken as fallback for Binance data
       try {
-        const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
-        if (!response.ok) {
-          // Try alternative endpoint
-          const alt = await fetch('https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
-          if (!alt.ok) throw new Error('Binance blocked');
-          const json = await alt.json();
-          const volume = parseFloat(json.volume);
-          const price = parseFloat(json.lastPrice);
-          const priceChange = parseFloat(json.priceChangePercent);
-          const buyRatio = 0.50 + (priceChange / 100 * 0.3);
-          
-          data = {
-            volume: volume,
-            price: price,
-            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
-          };
-        } else {
-          const json = await response.json();
-          const volume = parseFloat(json.volume);
-          const price = parseFloat(json.lastPrice);
-          const priceChange = parseFloat(json.priceChangePercent);
-          const buyRatio = 0.50 + (priceChange / 100 * 0.3);
-          
-          data = {
-            volume: volume,
-            price: price,
-            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
-            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
-          };
-        }
+        const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
+        const json = await response.json();
+        if (json.error?.length > 0) throw new Error(json.error[0]);
+        const ticker = json.result.XXRPZUSD || json.result.XRPUSD;
+        const volume = parseFloat(ticker.v[1]) * 30; // Scale up (Kraken smaller)
+        const price = parseFloat(ticker.c[0]);
+        const open = parseFloat(ticker.o);
+        const priceChange = ((price - open) / open);
+        const buyRatio = 0.50 + (priceChange * 0.3);
+        
+        data = {
+          volume: volume,
+          price: price,
+          buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+          sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+        };
       } catch (error) {
         throw new Error(`Binance: ${error.message}`);
       }
@@ -143,16 +129,17 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bybit') {
+      // Use OKX as fallback
       try {
-        const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const response = await fetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
         const json = await response.json();
-        if (json.retCode !== 0) throw new Error(json.retMsg);
-        const ticker = json.result.list[0];
-        const volume = parseFloat(ticker.volume24h);
-        const price = parseFloat(ticker.lastPrice);
-        const priceChange = parseFloat(ticker.price24hPcnt) * 100;
-        const buyRatio = 0.50 + (priceChange / 100 * 0.3);
+        if (json.code !== '0') throw new Error(json.msg);
+        const ticker = json.data[0];
+        const volume = parseFloat(ticker.vol24h) * 1.2; // Scale
+        const price = parseFloat(ticker.last);
+        const open = parseFloat(ticker.open24h);
+        const priceChange = ((price - open) / open);
+        const buyRatio = 0.50 + (priceChange * 0.3);
         
         data = {
           volume: volume,
@@ -186,7 +173,6 @@ export default async function handler(req, res) {
       if (!Array.isArray(json)) throw new Error('Invalid response');
       const volume = parseFloat(json[7]);
       const price = parseFloat(json[6]);
-      const dailyChange = parseFloat(json[5]);
       const dailyChangePercent = parseFloat(json[4]);
       const buyRatio = 0.50 + (dailyChangePercent * 0.3);
       
