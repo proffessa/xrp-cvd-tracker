@@ -27,8 +27,6 @@ const XRPCVDTracker = () => {
   const [initialized, setInitialized] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
-  const [secondsElapsed, setSecondsElapsed] = useState(0);
-  const [nextUpdateIn, setNextUpdateIn] = useState(30);
   const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 100 });
 
   const fetchExchangeData = async (exchangeId) => {
@@ -247,25 +245,8 @@ const XRPCVDTracker = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Countdown timer - updates every second
+  // Update brush when data changes
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsElapsed(prev => prev + 1);
-      setNextUpdateIn(prev => {
-        if (prev <= 1) {
-          return 30; // Reset countdown
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  // Reset countdown when data updates
-  useEffect(() => {
-    setNextUpdateIn(30);
-    setSecondsElapsed(0);
     // Keep brush showing all data
     setBrushIndex({ startIndex: 0, endIndex: Math.max(0, historicalData.length - 1) });
   }, [lastUpdate, historicalData.length]);
