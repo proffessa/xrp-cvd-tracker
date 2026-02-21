@@ -20,28 +20,40 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
-      // Binance engelliyse CoinGecko'dan çek
       try {
-        const response = await fetch('https://api.coingecko.com/api/v3/exchanges/binance/tickers?coin_ids=ripple&include_exchange_logo=false');
-        const json = await response.json();
-        
-        if (json.tickers && json.tickers.length > 0) {
-          const ticker = json.tickers.find(t => t.target === 'USDT' && t.base === 'XRP') || json.tickers[0];
-          const volume = parseFloat(ticker.volume);
-          const price = parseFloat(ticker.last);
-          const trustScore = ticker.trust_score === 'green' ? 0.52 : 0.50;
+        const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+        if (!response.ok) {
+          // Try alternative endpoint
+          const alt = await fetch('https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
+          if (!alt.ok) throw new Error('Binance blocked');
+          const json = await alt.json();
+          const volume = parseFloat(json.volume);
+          const price = parseFloat(json.lastPrice);
+          const priceChange = parseFloat(json.priceChangePercent);
+          const buyRatio = 0.50 + (priceChange / 100 * 0.3);
           
           data = {
             volume: volume,
             price: price,
-            buyVolume: volume * trustScore,
-            sellVolume: volume * (1 - trustScore)
+            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
           };
         } else {
-          throw new Error('No data from CoinGecko');
+          const json = await response.json();
+          const volume = parseFloat(json.volume);
+          const price = parseFloat(json.lastPrice);
+          const priceChange = parseFloat(json.priceChangePercent);
+          const buyRatio = 0.50 + (priceChange / 100 * 0.3);
+          
+          data = {
+            volume: volume,
+            price: price,
+            buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+            sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+          };
         }
       } catch (error) {
-        throw new Error(`Binance unavailable: ${error.message}`);
+        throw new Error(`Binance: ${error.message}`);
       }
     }
     else if (exchange === 'kraken') {
@@ -131,28 +143,25 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bybit') {
-      // Bybit da CoinGecko'dan çek
       try {
-        const response = await fetch('https://api.coingecko.com/api/v3/exchanges/bybit_spot/tickers?coin_ids=ripple&include_exchange_logo=false');
+        const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const json = await response.json();
+        if (json.retCode !== 0) throw new Error(json.retMsg);
+        const ticker = json.result.list[0];
+        const volume = parseFloat(ticker.volume24h);
+        const price = parseFloat(ticker.lastPrice);
+        const priceChange = parseFloat(ticker.price24hPcnt) * 100;
+        const buyRatio = 0.50 + (priceChange / 100 * 0.3);
         
-        if (json.tickers && json.tickers.length > 0) {
-          const ticker = json.tickers.find(t => t.target === 'USDT' && t.base === 'XRP') || json.tickers[0];
-          const volume = parseFloat(ticker.volume);
-          const price = parseFloat(ticker.last);
-          const trustScore = ticker.trust_score === 'green' ? 0.51 : 0.50;
-          
-          data = {
-            volume: volume,
-            price: price,
-            buyVolume: volume * trustScore,
-            sellVolume: volume * (1 - trustScore)
-          };
-        } else {
-          throw new Error('No data from CoinGecko');
-        }
+        data = {
+          volume: volume,
+          price: price,
+          buyVolume: volume * Math.max(0.45, Math.min(0.55, buyRatio)),
+          sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
+        };
       } catch (error) {
-        throw new Error(`Bybit unavailable: ${error.message}`);
+        throw new Error(`Bybit: ${error.message}`);
       }
     }
     else if (exchange === 'bitstamp') {
