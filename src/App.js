@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } from 'lucide-react';
 
+const EXCHANGES_CONFIG = [
+  { name: 'Binance',  id: 'binance',  color: '#FF0000' },
+  { name: 'Upbit',    id: 'upbit',    color: '#0000FF' },
+  { name: 'KuCoin',   id: 'kucoin',   color: '#00FF00' },
+  { name: 'Kraken',   id: 'kraken',   color: '#FFFF00' },
+  { name: 'Coinbase', id: 'coinbase', color: '#8000FF' },
+  { name: 'Bitfinex', id: 'bitfinex', color: '#FF8000' },
+  { name: 'Bitstamp', id: 'bitstamp', color: '#00FFFF' },
+  { name: 'Gate.io',  id: 'gate',     color: '#FF00FF' },
+  { name: 'OKX',      id: 'okx',      color: '#654321' },
+  { name: 'Bybit',    id: 'bybit',    color: '#888888' },
+];
+
 const XRPCVDTracker = () => {
-  const [exchanges, setExchanges] = useState([
-    { name: 'Binance', id: 'binance', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF0000', status: 'loading', price: 0 },
-    { name: 'Upbit', id: 'upbit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#0000FF', status: 'loading', price: 0 },
-    { name: 'KuCoin', id: 'kucoin', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00FF00', status: 'loading', price: 0 },
-    { name: 'Kraken', id: 'kraken', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FFFF00', status: 'loading', price: 0 },
-    { name: 'Coinbase', id: 'coinbase', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#8000FF', status: 'loading', price: 0 },
-    { name: 'Bitfinex', id: 'bitfinex', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF8000', status: 'loading', price: 0 },
-    { name: 'Bitstamp', id: 'bitstamp', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#00FFFF', status: 'loading', price: 0 },
-    { name: 'Gate.io', id: 'gate', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#FF00FF', status: 'loading', price: 0 },
-    { name: 'OKX', id: 'okx', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#654321', status: 'loading', price: 0 },
-    { name: 'Bybit', id: 'bybit', cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, color: '#000000', status: 'loading', price: 0 }
-  ]);
+  const [exchanges, setExchanges] = useState(
+    EXCHANGES_CONFIG.map(e => ({ ...e, cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, status: 'loading', price: 0 }))
+  );
   
   // Use ref to persist baselines across renders
   const baselinesRef = useRef({});
@@ -27,7 +31,7 @@ const XRPCVDTracker = () => {
   const [initialized, setInitialized] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
-  const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 100 });
+  const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 0 });
 
   const fetchExchangeData = async (exchangeId) => {
     try {
@@ -93,7 +97,7 @@ const XRPCVDTracker = () => {
             groupedData[time] = { time, xrpPrice: 0, priceCount: 0 };
           }
           
-          const exchange = exchanges.find(ex => ex.id === record.exchange);
+          const exchange = EXCHANGES_CONFIG.find(ex => ex.id === record.exchange);
           if (exchange) {
             groupedData[time][exchange.name] = record.cvd / 1000000;
             // Average price from all exchanges for this timestamp
@@ -238,11 +242,13 @@ const XRPCVDTracker = () => {
     setIsLoading(false);
   };
 
+  const updateDataRef = useRef(null);
+  updateDataRef.current = updateData;
+
   useEffect(() => {
-    updateData();
-    const interval = setInterval(updateData, 30000);
+    updateDataRef.current();
+    const interval = setInterval(() => updateDataRef.current(), 30000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update brush when data changes
@@ -381,8 +387,8 @@ const XRPCVDTracker = () => {
                   stroke="#FFD700"
                   label={{ value: 'XRP Fiyatı ($)', angle: 90, position: 'insideRight', fill: '#FFD700' }}
                   domain={[
-                    (dataMin) => (dataMin * 0.999).toFixed(3), // Slightly below min
-                    (dataMax) => (dataMax * 1.001).toFixed(3)  // Slightly above max
+                    (dataMin) => parseFloat((dataMin * 0.999).toFixed(3)),
+                    (dataMax) => parseFloat((dataMax * 1.001).toFixed(3))
                   ]}
                   tickFormatter={(value) => `$${value.toFixed(3)}`}
                 />
@@ -553,7 +559,7 @@ const XRPCVDTracker = () => {
                 />
                 <Bar dataKey="CVD" radius={[8, 8, 0, 0]}>
                   {successfulExchanges.map((entry, index) => (
-                    <rect key={`cell-${index}`} fill={entry.cvd >= 0 ? '#10b981' : '#ef4444'} />
+                    <Cell key={`cell-${index}`} fill={entry.cvd >= 0 ? '#10b981' : '#ef4444'} />
                   ))}
                 </Bar>
               </BarChart>
