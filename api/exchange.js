@@ -16,7 +16,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Exchange parameter required' });
   }
 
-  // Safe JSON fetch helper - returns null if HTML or invalid JSON
   async function safeFetch(url, options = {}) {
     const response = await fetch(url, { ...options, headers: { 'User-Agent': 'Mozilla/5.0', ...(options.headers || {}) } });
     const text = await response.text();
@@ -28,27 +27,21 @@ export default async function handler(req, res) {
     }
   }
 
-  // CoinGecko fallback for a specific exchange ticker
   async function fetchFromCoinGecko(exchangeId, coinGeckoExchangeId) {
     try {
       const json = await safeFetch(
         `https://api.coingecko.com/api/v3/exchanges/${coinGeckoExchangeId}/tickers?coin_ids=ripple&include_exchange_logo=false&depth=false`
       );
       if (!json || !Array.isArray(json.tickers) || json.tickers.length === 0) return null;
-
-      // Find XRP/USDT or XRP/USD ticker
       const ticker = json.tickers.find(t =>
         (t.base === 'XRP' || t.base === 'RIPPLE') &&
         (t.target === 'USDT' || t.target === 'USD')
       ) || json.tickers[0];
-
       if (!ticker) return null;
-
       const price = parseFloat(ticker.last);
       const volume = parseFloat(ticker.volume);
       const changePercent = parseFloat(ticker.bid_ask_spread_percentage) || 0;
       const buyRatio = 0.50 + (changePercent * 0.003);
-
       return {
         volume,
         price,
@@ -64,12 +57,13 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
-      // Try direct Binance endpoints first
       const endpoints = [
         'https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api2.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api3.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+        'https://data.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+        'https://data-api.binance.vision/api/v3/ticker/24hr?symbol=XRPUSDT',
       ];
 
       let json = null;
@@ -94,7 +88,6 @@ export default async function handler(req, res) {
           sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
         };
       } else {
-        // Fallback: CoinGecko Binance data
         data = await fetchFromCoinGecko('binance', 'binance');
         if (!data) throw new Error('Binance API error - all endpoints failed');
       }
@@ -181,7 +174,6 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bybit') {
-      // Try direct Bybit endpoint first
       const json = await safeFetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
       if (json && json.retCode === 0 && json.result?.list?.[0]) {
         const ticker = json.result.list[0];
@@ -197,7 +189,6 @@ export default async function handler(req, res) {
           sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
         };
       } else {
-        // Fallback: CoinGecko Bybit data
         data = await fetchFromCoinGecko('bybit', 'bybit_spot');
         if (!data) throw new Error('Bybit API error - all endpoints failed');
       }
