@@ -1,4 +1,4 @@
-// api/exchange.js - Fixed: Binance/Bybit via CoinGecko fallback + safe JSON parsing
+// api/exchange.js - Fixed: Binance via www.binance.com endpoint
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     }
   }
 
-  async function fetchFromCoinGecko(exchangeId, coinGeckoExchangeId) {
+  async function fetchFromCoinGecko(coinGeckoExchangeId) {
     try {
       const json = await safeFetch(
         `https://api.coingecko.com/api/v3/exchanges/${coinGeckoExchangeId}/tickers?coin_ids=ripple&include_exchange_logo=false&depth=false`
@@ -57,7 +57,9 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
+      // www.binance.com CDN endpoint - not blocked by Binance IP restrictions
       const endpoints = [
+        'https://www.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
         'https://api2.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
@@ -88,7 +90,7 @@ export default async function handler(req, res) {
           sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
         };
       } else {
-        data = await fetchFromCoinGecko('binance', 'binance');
+        data = await fetchFromCoinGecko('binance');
         if (!data) throw new Error('Binance API error - all endpoints failed');
       }
     }
@@ -189,7 +191,7 @@ export default async function handler(req, res) {
           sellVolume: volume * Math.max(0.45, Math.min(0.55, 1 - buyRatio))
         };
       } else {
-        data = await fetchFromCoinGecko('bybit', 'bybit_spot');
+        data = await fetchFromCoinGecko('bybit_spot');
         if (!data) throw new Error('Bybit API error - all endpoints failed');
       }
     }
