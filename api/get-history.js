@@ -1,6 +1,16 @@
 // api/get-history.js - Get CVD history from Supabase
 import { createClient } from '@supabase/supabase-js';
 
+// Map period strings to hours
+const PERIOD_HOURS = {
+  '1h': 1,
+  '6h': 6,
+  '1d': 24,
+  '1w': 24 * 7,
+  '1m': 24 * 30,
+  '3m': 24 * 90,
+};
+
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -23,41 +33,31 @@ export default async function handler(req, res) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { limit = 100, hours = 2 } = req.query;
+    const { period = '1d' } = req.query;
 
-    // Get CVD history for last N hours
-    const timeAgo = new Date();
-    timeAgo.setHours(timeAgo.getHours() - parseInt(hours));
-
-    const { data: historyData, error: historyError } = await supabase
+    let query = supabase
       .from('cvd_history')
-      .select('*')
-      .gte('timestamp', timeAgo.toISOString())
-      .order('timestamp', { ascending: true })
-      .limit(parseInt(limit) * 10); // Get more data for all exchanges
+      .select('id, timestamp, exchange, buy_volume, sell_volume, price')
+      .order('timestamp', { ascending: true });
+
+    // Apply time filter unless 'all' is selected
+    if (period !== 'all' && PERIOD_HOURS[period]) {
+      const startDate = new Date();
+      startDate.setHours(startDate.getHours() - PERIOD_HOURS[period]);
+      query = query.gte('timestamp', startDate.toISOString());
+    }
+
+    const { data: historyData, error: historyError } = await query;
 
     if (historyError) {
       console.error('Error fetching history:', historyError);
       return res.status(500).json({ error: 'Failed to fetch history' });
     }
 
-    // Get latest baseline values for each exchange
-    const { data: latestData, error: latestError } = await supabase
-      .from('cvd_latest')
-      .select('*');
-
-    if (latestError) {
-      console.error('Error fetching latest:', latestError);
-    }
-
-    // Format data for frontend
-    const formattedData = {
+    return res.status(200).json({
       history: historyData || [],
-      latest: latestData || [],
       count: historyData?.length || 0
-    };
-
-    return res.status(200).json(formattedData);
+    });
 
   } catch (error) {
     console.error('Get history error:', error);
