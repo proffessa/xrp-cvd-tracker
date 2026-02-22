@@ -50,7 +50,6 @@ const XRPCVDTracker = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState([]);
   const [dbConnected, setDbConnected] = useState(false);
-  const [savedCount, setSavedCount] = useState(0);
   const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 0 });
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState('');
@@ -62,25 +61,6 @@ const XRPCVDTracker = () => {
       throw new Error(errorData.error || `HTTP ${response.status}`);
     }
     return response.json();
-  };
-
-  const saveCVDData = async (exchangesData, price) => {
-    try {
-      const response = await fetch('/api/save-cvd', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exchanges: exchangesData, xrpPrice: price }),
-      });
-      if (!response.ok) throw new Error('Failed to save data');
-      const result = await response.json();
-      setDbConnected(true);
-      setSavedCount(prev => prev + result.saved);
-      return true;
-    } catch (error) {
-      console.error('Save error:', error);
-      setDbConnected(false);
-      return false;
-    }
   };
 
   const loadHistoricalData = async (period) => {
@@ -184,7 +164,6 @@ const XRPCVDTracker = () => {
       setExchanges(updatedExchanges);
       setErrors(newErrors);
 
-      await saveCVDData(updatedExchanges, currentPrice);
       await loadHistoricalData(selectedPeriod);
 
       setLastUpdate(new Date());
@@ -212,7 +191,6 @@ const XRPCVDTracker = () => {
       } else {
         setCleanupMessage(`✅ Silindi: ${result.deleted_history} kayıt temizlendi.`);
         setHistoricalData([]);
-        setSavedCount(0);
         setExchanges(prev => prev.map(ex => ({ ...ex, cvd: 0, trend: 0 })));
         setTimeout(() => updateDataRef.current(), 1500);
       }
@@ -274,7 +252,7 @@ const XRPCVDTracker = () => {
                   {dbConnected && (
                     <div className="flex items-center gap-1 text-green-400 text-xs">
                       <Database className="w-4 h-4" />
-                      <span>Veritabanı Bağlı ({savedCount} kayıt)</span>
+                      <span>Veritabanı Bağlı</span>
                     </div>
                   )}
                 </div>
