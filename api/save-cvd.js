@@ -33,17 +33,20 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid data format' });
     }
 
+    const now = new Date().toISOString();
+
     // Save CVD history for each exchange
+    // cvd column: use buy_volume - sell_volume as the delta for this snapshot
     const cvdRecords = exchanges
       .filter(ex => ex.status === 'success')
       .map(ex => ({
+        timestamp: now,
         exchange: ex.id,
-        cvd: ex.cvd,
-        volume: ex.volume24h,
-        buy_volume: ex.buyVolume,
-        sell_volume: ex.sellVolume,
-        price: ex.price || xrpPrice,
-        baseline: ex.baseline
+        cvd: (ex.buyVolume || 0) - (ex.sellVolume || 0),
+        volume: ex.volume24h || 0,
+        buy_volume: ex.buyVolume || 0,
+        sell_volume: ex.sellVolume || 0,
+        price: ex.price || xrpPrice || 0,
       }));
 
     if (cvdRecords.length > 0) {
@@ -53,40 +56,7 @@ export default async function handler(req, res) {
 
       if (historyError) {
         console.error('Error saving CVD history:', historyError);
-        return res.status(500).json({ error: 'Failed to save CVD history' });
-      }
-
-      // Update latest CVD for each exchange
-      for (const ex of exchanges.filter(e => e.status === 'success')) {
-        const { error: latestError } = await supabase
-          .from('cvd_latest')
-          .upsert({
-            exchange: ex.id,
-            cvd: ex.cvd,
-            volume: ex.volume24h,
-            buy_volume: ex.buyVolume,
-            sell_volume: ex.sellVolume,
-            price: ex.price || xrpPrice,
-            baseline: ex.baseline,
-            updated_at: new Date().toISOString()
-          });
-
-        if (latestError) {
-          console.error(`Error updating latest for ${ex.id}:`, latestError);
-        }
-      }
-    }
-
-    // Save XRP price history
-    if (xrpPrice && xrpPrice > 0) {
-      const { error: priceError } = await supabase
-        .from('xrp_price_history')
-        .insert({
-          price: xrpPrice
-        });
-
-      if (priceError) {
-        console.error('Error saving price history:', priceError);
+        return res.status(500).json({ error: 'Failed to save CVD history', details: historyError.message });
       }
     }
 
