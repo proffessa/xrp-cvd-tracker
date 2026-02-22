@@ -1,6 +1,1 @@
-{
-  "functions": {
-    "api/cron-collect-cvd.js": {
-      "maxDuration": 60
-    }
-  }
+{}
