@@ -1,14 +1,14 @@
 // api/get-history.js - Get CVD history from Supabase
 import { createClient } from '@supabase/supabase-js';
 
-// Map period strings to hours
-const PERIOD_HOURS = {
-  '1h': 1,
-  '6h': 6,
-  '1d': 24,
-  '1w': 24 * 7,
-  '1m': 24 * 30,
-  '3m': 24 * 90,
+// Map period strings to milliseconds
+const PERIOD_MS = {
+  '1h':  1 * 60 * 60 * 1000,
+  '6h':  6 * 60 * 60 * 1000,
+  '1d': 24 * 60 * 60 * 1000,
+  '1w':  7 * 24 * 60 * 60 * 1000,
+  '1m': 30 * 24 * 60 * 60 * 1000,
+  '3m': 90 * 24 * 60 * 60 * 1000,
 };
 
 export default async function handler(req, res) {
@@ -40,10 +40,9 @@ export default async function handler(req, res) {
       .select('id, timestamp, exchange, buy_volume, sell_volume, price')
       .order('timestamp', { ascending: true });
 
-    // Apply time filter unless 'all' is selected
-    if (period !== 'all' && PERIOD_HOURS[period]) {
-      const startDate = new Date();
-      startDate.setHours(startDate.getHours() - PERIOD_HOURS[period]);
+    // Use Date.now() for correct UTC-based time filtering (avoids setHours timezone drift)
+    if (period !== 'all' && PERIOD_MS[period]) {
+      const startDate = new Date(Date.now() - PERIOD_MS[period]);
       query = query.gte('timestamp', startDate.toISOString());
     }
 
@@ -54,9 +53,35 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to fetch history' });
     }
 
+    // Compute per-exchange delta-based cumulative CVD on the server
+    // delta[t] = (buy[t] - sell[t]) - (buy[t-1] - sell[t-1])
+    // This avoids the "always positive" problem caused by summing raw rolling volumes
+    const prevNetMap = {};   // last known (buy - sell) per exchange
+    const cumulMap = {};     // running cumulative CVD per exchange
+
+    const enriched = (historyData || []).map(record => {
+      const exId = record.exchange;
+      const net = record.buy_volume - record.sell_volume;
+
+      if (prevNetMap[exId] === undefined) {
+        // First record for this exchange: delta = 0 (no previous reference)
+        prevNetMap[exId] = net;
+        cumulMap[exId] = 0;
+      } else {
+        const delta = net - prevNetMap[exId];
+        cumulMap[exId] += delta;
+        prevNetMap[exId] = net;
+      }
+
+      return {
+        ...record,
+        cumulative_cvd: cumulMap[exId],
+      };
+    });
+
     return res.status(200).json({
-      history: historyData || [],
-      count: historyData?.length || 0
+      history: enriched,
+      count: enriched.length,
     });
 
   } catch (error) {
