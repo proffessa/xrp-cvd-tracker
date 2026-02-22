@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database, Trash2 } from 'lucide-react';
 
+const FUTURES_EXCHANGES_CONFIG = [
+  { name: 'Binance Futures', id: 'binance', color: '#FF6B6B' },
+  { name: 'Bybit Futures',   id: 'bybit',   color: '#4ECDC4' },
+  { name: 'OKX Futures',     id: 'okx',     color: '#FFE66D' },
+];
+
 const EXCHANGES_CONFIG = [
   { name: 'Binance',  id: 'binance',  color: '#FF0000' },
   { name: 'Upbit',    id: 'upbit',    color: '#0000FF' },
@@ -53,6 +59,9 @@ const XRPCVDTracker = () => {
   const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 0 });
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState('');
+
+  const [futuresData, setFuturesData] = useState([]);
+  const [futuresLoading, setFuturesLoading] = useState(false);
 
   const fetchExchangeData = async (exchangeId) => {
     const response = await fetch(`/api/exchange?exchange=${exchangeId}`);
@@ -127,6 +136,51 @@ const XRPCVDTracker = () => {
     }
   };
 
+  const loadFuturesData = async (period) => {
+    try {
+      setFuturesLoading(true);
+      const response = await fetch(`/api/get-futures-history?period=${period}`);
+      if (!response.ok) throw new Error('Failed to load futures history');
+      const { history } = await response.json();
+
+      if (history && history.length > 0) {
+        const bucketMap = {};
+
+        history.forEach(record => {
+          const exId = record.exchange;
+          const timeKey = formatTimestamp(record.timestamp, period);
+          const ts = new Date(record.timestamp).getTime();
+
+          if (!bucketMap[timeKey]) {
+            bucketMap[timeKey] = { time: timeKey, _ts: ts };
+          }
+
+          const exConfig = FUTURES_EXCHANGES_CONFIG.find(ex => ex.id === exId);
+          if (exConfig) {
+            bucketMap[timeKey][exConfig.name] = record.cumulative_cvd / 1_000_000;
+            bucketMap[timeKey][`${exConfig.name}_oi`] = record.open_interest;
+            bucketMap[timeKey][`${exConfig.name}_longVol`] = record.long_vol;
+            bucketMap[timeKey][`${exConfig.name}_shortVol`] = record.short_vol;
+            bucketMap[timeKey]._ts = ts;
+          }
+        });
+
+        const formatted = Object.values(bucketMap)
+          .sort((a, b) => a._ts - b._ts)
+          .map(({ _ts, ...rest }) => rest);
+
+        setFuturesData(formatted);
+      } else {
+        setFuturesData([]);
+      }
+    } catch (error) {
+      console.error('Load futures history error:', error);
+      setFuturesData([]);
+    } finally {
+      setFuturesLoading(false);
+    }
+  };
+
   const updateData = async () => {
     setIsLoading(true);
     const newErrors = [];
@@ -165,6 +219,7 @@ const XRPCVDTracker = () => {
       setErrors(newErrors);
 
       await loadHistoricalData(selectedPeriod);
+      await loadFuturesData(selectedPeriod);
 
       setLastUpdate(new Date());
     } catch (error) {
@@ -208,6 +263,9 @@ const XRPCVDTracker = () => {
   const loadHistoricalDataRef = useRef(null);
   loadHistoricalDataRef.current = loadHistoricalData;
 
+  const loadFuturesDataRef = useRef(null);
+  loadFuturesDataRef.current = loadFuturesData;
+
   useEffect(() => {
     updateDataRef.current();
     const interval = setInterval(() => updateDataRef.current(), 30000);
@@ -216,6 +274,7 @@ const XRPCVDTracker = () => {
 
   useEffect(() => {
     loadHistoricalDataRef.current(selectedPeriod);
+    loadFuturesDataRef.current(selectedPeriod);
   }, [selectedPeriod]);
 
   useEffect(() => {
@@ -414,6 +473,112 @@ const XRPCVDTracker = () => {
             </div>
           </div>
         )}
+
+        {/* Futures CVD Section */}
+        {futuresLoading && (
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20 text-center text-blue-300">
+            <RefreshCw className="w-6 h-6 animate-spin inline-block mr-2" />
+            Futures verileri yükleniyor...
+          </div>
+        )}
+
+        {!futuresLoading && futuresData.length === 0 && (
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20 text-center text-gray-400">
+            Henüz futures verisi yok
+          </div>
+        )}
+
+        {futuresData.length > 1 && (
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
+            <h2 className="text-xl font-bold text-white mb-4">Futures Kümülatif CVD (Taker Buy - Sell) ({selectedPeriodLabel}) - {futuresData.length} veri noktası</h2>
+            <ResponsiveContainer width="100%" height={500}>
+              <LineChart data={futuresData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="time" stroke="#94a3b8" angle={-45} textAnchor="end" height={80} />
+                <YAxis
+                  yAxisId="left"
+                  stroke="#94a3b8"
+                  label={{ value: 'Milyon XRP', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
+                  domain={['auto', 'auto']}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  stroke="#FF6B6B"
+                  label={{ value: 'Açık Faiz (XRP)', angle: 90, position: 'insideRight', fill: '#FF6B6B' }}
+                  domain={['auto', 'auto']}
+                  tickFormatter={(value) => formatNumber(value)}
+                />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
+                  labelStyle={{ color: '#cbd5e1' }}
+                  formatter={(value, name) => {
+                    if (name.endsWith('_oi')) return [formatNumber(value), name.replace('_oi', '') + ' OI'];
+                    return [`${value.toFixed(2)}M XRP`, name];
+                  }}
+                />
+                <Legend />
+                {FUTURES_EXCHANGES_CONFIG.map(ex => (
+                  <Line
+                    key={ex.id}
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={ex.name}
+                    stroke={ex.color}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                ))}
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="Binance Futures_oi"
+                  name="Binance Futures_oi"
+                  stroke="#FF6B6B"
+                  strokeWidth={1}
+                  dot={false}
+                  connectNulls
+                  strokeDasharray="5 5"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {futuresData.length > 0 && (() => {
+          const latest = futuresData[futuresData.length - 1];
+          const barData = FUTURES_EXCHANGES_CONFIG.map(ex => ({
+            name: ex.name,
+            longVol: (latest[`${ex.name}_longVol`] || 0) / 1_000_000,
+            shortVol: (latest[`${ex.name}_shortVol`] || 0) / 1_000_000,
+            netDiff: ((latest[`${ex.name}_longVol`] || 0) - (latest[`${ex.name}_shortVol`] || 0)) / 1_000_000,
+          }));
+          return (
+            <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
+              <h2 className="text-xl font-bold text-white mb-4">Futures Long vs Short Açık Pozisyon Hacmi</h2>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={barData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="name" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" label={{ value: 'Milyon XRP', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
+                    labelStyle={{ color: '#cbd5e1' }}
+                    formatter={(value, name, props) => {
+                      const net = props.payload.netDiff;
+                      const label = name === 'longVol' ? 'Long' : 'Short';
+                      return [`${value.toFixed(2)}M XRP (Net: ${net >= 0 ? '+' : ''}${net.toFixed(2)}M)`, label];
+                    }}
+                  />
+                  <Legend formatter={(value) => value === 'longVol' ? 'Long' : 'Short'} />
+                  <Bar dataKey="longVol" name="longVol" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="shortVol" name="shortVol" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })()}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {exchanges.map((exchange) => {
