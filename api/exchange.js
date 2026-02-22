@@ -1,4 +1,4 @@
-// api/exchange.js - Working version without CoinGecko
+// api/exchange.js - Fixed: Binance fallback endpoints + safe JSON parsing
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,13 +16,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Exchange parameter required' });
   }
 
+  // Safe JSON fetch helper - returns null if HTML or invalid JSON
+  async function safeFetch(url, options = {}) {
+    const response = await fetch(url, { ...options, headers: { 'User-Agent': 'Mozilla/5.0', ...(options.headers || {}) } });
+    const text = await response.text();
+    if (text.trim().startsWith('<')) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+
   try {
     let data = null;
 
     if (exchange === 'binance') {
-      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT');
-      const json = await response.json();
-      if (json.code) throw new Error(json.msg || 'Binance API error');
+      const endpoints = [
+        'https://api.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+        'https://api1.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+        'https://api2.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+        'https://api3.binance.com/api/v3/ticker/24hr?symbol=XRPUSDT',
+      ];
+
+      let json = null;
+      for (const url of endpoints) {
+        try {
+          json = await safeFetch(url);
+          if (json && !json.code) break;
+        } catch (e) { continue; }
+      }
+
+      if (!json || json.code) throw new Error(json?.msg || 'Binance API error - all endpoints failed');
+
       const volume = parseFloat(json.volume);
       const price = parseFloat(json.lastPrice);
       const open = parseFloat(json.openPrice);
@@ -37,8 +63,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'kraken') {
-      const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
-      const json = await response.json();
+      const json = await safeFetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
+      if (!json) throw new Error('Kraken returned invalid response');
       if (json.error?.length > 0) throw new Error(json.error[0]);
       const ticker = json.result.XXRPZUSD || json.result.XRPUSD;
       const volume = parseFloat(ticker.v[1]);
@@ -55,8 +81,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'coinbase') {
-      const response = await fetch('https://api.exchange.coinbase.com/products/XRP-USD/stats');
-      const json = await response.json();
+      const json = await safeFetch('https://api.exchange.coinbase.com/products/XRP-USD/stats');
+      if (!json) throw new Error('Coinbase returned invalid response');
       const volume = parseFloat(json.volume);
       const price = parseFloat(json.last);
       const open = parseFloat(json.open);
@@ -71,8 +97,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'kucoin') {
-      const response = await fetch('https://api.kucoin.com/api/v1/market/stats?symbol=XRP-USDT');
-      const json = await response.json();
+      const json = await safeFetch('https://api.kucoin.com/api/v1/market/stats?symbol=XRP-USDT');
+      if (!json) throw new Error('KuCoin returned invalid response');
       if (json.code !== '200000') throw new Error(json.msg);
       const ticker = json.data;
       const volume = parseFloat(ticker.vol);
@@ -88,8 +114,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'gate') {
-      const response = await fetch('https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XRP_USDT');
-      const json = await response.json();
+      const json = await safeFetch('https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XRP_USDT');
+      if (!json) throw new Error('Gate.io returned invalid response');
       if (!Array.isArray(json) || json.length === 0) throw new Error('No data');
       const ticker = json[0];
       const volume = parseFloat(ticker.base_volume);
@@ -105,8 +131,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'okx') {
-      const response = await fetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
-      const json = await response.json();
+      const json = await safeFetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT');
+      if (!json) throw new Error('OKX returned invalid response');
       if (json.code !== '0') throw new Error(json.msg);
       const ticker = json.data[0];
       const volume = parseFloat(ticker.vol24h);
@@ -123,10 +149,11 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bybit') {
-      const response = await fetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
-      const json = await response.json();
+      const json = await safeFetch('https://api.bybit.com/v5/market/tickers?category=spot&symbol=XRPUSDT');
+      if (!json) throw new Error('Bybit returned invalid response');
       if (json.retCode !== 0) throw new Error(json.retMsg || 'Bybit API error');
-      const ticker = json.result.list[0];
+      const ticker = json.result?.list?.[0];
+      if (!ticker) throw new Error('Bybit: no ticker data');
       const volume = parseFloat(ticker.volume24h);
       const price = parseFloat(ticker.lastPrice);
       const open = parseFloat(ticker.prevPrice24h);
@@ -141,8 +168,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bitstamp') {
-      const response = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
-      const json = await response.json();
+      const json = await safeFetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
+      if (!json) throw new Error('Bitstamp returned invalid response');
       const volume = parseFloat(json.volume);
       const price = parseFloat(json.last);
       const open = parseFloat(json.open);
@@ -157,8 +184,8 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'bitfinex') {
-      const response = await fetch('https://api-pub.bitfinex.com/v2/ticker/tXRPUSD');
-      const json = await response.json();
+      const json = await safeFetch('https://api-pub.bitfinex.com/v2/ticker/tXRPUSD');
+      if (!json) throw new Error('Bitfinex returned invalid response');
       if (!Array.isArray(json)) throw new Error('Invalid response');
       const volume = parseFloat(json[7]);
       const price = parseFloat(json[6]);
@@ -173,14 +200,14 @@ export default async function handler(req, res) {
       };
     }
     else if (exchange === 'upbit') {
-      const response = await fetch('https://api.upbit.com/v1/ticker?markets=KRW-XRP');
-      const json = await response.json();
+      const json = await safeFetch('https://api.upbit.com/v1/ticker?markets=KRW-XRP');
+      if (!json) throw new Error('Upbit returned invalid response');
       if (!Array.isArray(json) || json.length === 0) throw new Error('No data');
       const ticker = json[0];
       const volume = parseFloat(ticker.acc_trade_volume_24h);
       const priceKRW = parseFloat(ticker.trade_price);
       const changeRate = parseFloat(ticker.signed_change_rate);
-      const krwToUsd = 1 / 1400; // ~1400 KRW = 1 USD
+      const krwToUsd = 1 / 1400;
       const priceUsd = priceKRW * krwToUsd;
       const buyRatio = 0.50 + (changeRate * 0.3);
       
