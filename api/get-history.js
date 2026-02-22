@@ -40,7 +40,6 @@ export default async function handler(req, res) {
       .select('id, timestamp, exchange, buy_volume, sell_volume, price')
       .order('timestamp', { ascending: true });
 
-    // Use Date.now() for correct UTC-based time filtering (avoids setHours timezone drift)
     if (period !== 'all' && PERIOD_MS[period]) {
       const startDate = new Date(Date.now() - PERIOD_MS[period]);
       query = query.gte('timestamp', startDate.toISOString());
@@ -53,25 +52,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to fetch history' });
     }
 
-    // Compute per-exchange delta-based cumulative CVD on the server
-    // delta[t] = (buy[t] - sell[t]) - (buy[t-1] - sell[t-1])
-    // This avoids the "always positive" problem caused by summing raw rolling volumes
-    const prevNetMap = {};   // last known (buy - sell) per exchange
-    const cumulMap = {};     // running cumulative CVD per exchange
+    // Each saved record already contains a single-snapshot delta:
+    //   buy_volume - sell_volume = net buy pressure for that interval
+    // So cumulative CVD = simple running sum of those deltas per exchange.
+    const cumulMap = {};
 
     const enriched = (historyData || []).map(record => {
       const exId = record.exchange;
-      const net = record.buy_volume - record.sell_volume;
+      const delta = record.buy_volume - record.sell_volume;
 
-      if (prevNetMap[exId] === undefined) {
-        // First record for this exchange: delta = 0 (no previous reference)
-        prevNetMap[exId] = net;
-        cumulMap[exId] = 0;
-      } else {
-        const delta = net - prevNetMap[exId];
-        cumulMap[exId] += delta;
-        prevNetMap[exId] = net;
-      }
+      if (cumulMap[exId] === undefined) cumulMap[exId] = 0;
+      cumulMap[exId] += delta;
 
       return {
         ...record,
