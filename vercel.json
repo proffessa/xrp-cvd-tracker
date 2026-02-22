@@ -3,11 +3,4 @@
     "api/cron-collect-cvd.js": {
       "maxDuration": 60
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron-collect-cvd",
-      "schedule": "*/1 * * * *"
-    }
-  ]
-}
+  }
