@@ -15,20 +15,28 @@ const EXCHANGES_CONFIG = [
   { name: 'Bybit',    id: 'bybit',    color: '#888888' },
 ];
 
+// Period selector options (label shown in UI, value sent to API)
+const PERIODS = [
+  { label: '1S',   value: '1h' },
+  { label: '6S',   value: '6h' },
+  { label: '1G',   value: '1d' },
+  { label: '1H',   value: '1w' },
+  { label: '1A',   value: '1m' },
+  { label: '3A',   value: '3m' },
+  { label: 'Tümü', value: 'all' },
+];
+
 const XRPCVDTracker = () => {
   const [exchanges, setExchanges] = useState(
     EXCHANGES_CONFIG.map(e => ({ ...e, cvd: 0, volume24h: 0, buyVolume: 0, sellVolume: 0, trend: 0, status: 'loading', price: 0 }))
   );
-  
-  // Use ref to persist baselines across renders
-  const baselinesRef = useRef({});
-  
+
+  const [selectedPeriod, setSelectedPeriod] = useState('1d');
   const [historicalData, setHistoricalData] = useState([]);
   const [xrpPrice, setXrpPrice] = useState(0);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState([]);
-  const [initialized, setInitialized] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 0 });
@@ -75,58 +83,88 @@ const XRPCVDTracker = () => {
     }
   };
 
-  const loadHistoricalData = async () => {
+  const loadHistoricalData = async (period) => {
     try {
-      const response = await fetch('/api/get-history?limit=100&hours=2');
+      const response = await fetch(`/api/get-history?period=${period}`);
       if (!response.ok) {
         throw new Error('Failed to load history');
       }
 
-      const { history, latest } = await response.json();
+      const { history } = await response.json();
 
       if (history && history.length > 0) {
-        const groupedData = {};
-        history.forEach(record => {
-          const time = new Date(record.timestamp).toLocaleTimeString('tr-TR', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          
-          if (!groupedData[time]) {
-            groupedData[time] = { time, xrpPrice: 0, priceCount: 0 };
+        // Determine time-bucket granularity based on period for the X-axis labels
+        const getBucketKey = (isoString) => {
+          const date = new Date(isoString);
+          if (period === '1h' || period === '6h') {
+            return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          } else if (period === '1d') {
+            return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+          } else {
+            const dateStr = date.toLocaleDateString('tr-TR', { month: '2-digit', day: '2-digit' });
+            const timeStr = date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            return `${dateStr} ${timeStr}`;
           }
-          
-          const exchange = EXCHANGES_CONFIG.find(ex => ex.id === record.exchange);
-          if (exchange) {
-            groupedData[time][exchange.name] = record.cvd / 1000000;
-            // Average price from all exchanges for this timestamp
+        };
+
+        // Compute cumulative CVD per exchange (records already sorted ascending by timestamp)
+        // CVD = Σ (buy_volume - sell_volume) from start of period to each point
+        const cumulativeCVD = {};
+        const bucketMap = {};
+
+        history.forEach(record => {
+          const exId = record.exchange;
+          if (cumulativeCVD[exId] === undefined) cumulativeCVD[exId] = 0;
+          cumulativeCVD[exId] += (record.buy_volume - record.sell_volume);
+
+          const timeKey = getBucketKey(record.timestamp);
+          const ts = new Date(record.timestamp).getTime();
+
+          if (!bucketMap[timeKey]) {
+            bucketMap[timeKey] = { time: timeKey, _ts: ts, _priceSum: 0, _priceCount: 0, xrpPrice: 0 };
+          }
+
+          const exConfig = EXCHANGES_CONFIG.find(ex => ex.id === exId);
+          if (exConfig) {
+            // Keep the latest cumulative value for this exchange within the bucket
+            bucketMap[timeKey][exConfig.name] = cumulativeCVD[exId] / 1000000;
+            // Records are sorted ascending; last record in bucket always has the largest ts
+            bucketMap[timeKey]._ts = ts;
             if (record.price && record.price > 0) {
-              groupedData[time].xrpPrice += record.price;
-              groupedData[time].priceCount += 1;
+              bucketMap[timeKey]._priceSum += record.price;
+              bucketMap[timeKey]._priceCount += 1;
             }
           }
         });
 
-        // Calculate average price and clean up
-        const formattedHistory = Object.values(groupedData).map(item => {
-          if (item.priceCount > 0) {
-            item.xrpPrice = item.xrpPrice / item.priceCount;
-          }
-          delete item.priceCount;
-          return item;
-        });
-        
+        // Sort by timestamp and clean up internal fields
+        const formattedHistory = Object.values(bucketMap)
+          .sort((a, b) => a._ts - b._ts)
+          .map(({ _ts, _priceSum, _priceCount, ...rest }) => {
+            if (_priceCount > 0) {
+              rest.xrpPrice = _priceSum / _priceCount;
+            }
+            return rest;
+          });
+
         setHistoricalData(formattedHistory);
         setDbConnected(true);
 
-        // Load baselines from latest data
-        if (latest && latest.length > 0) {
-          latest.forEach(item => {
-            baselinesRef.current[item.exchange] = item.baseline;
-            console.log(`[DB] Loaded baseline for ${item.exchange}: ${item.baseline}`);
-          });
-        }
+        // Update exchange cards with cumulative CVD for the selected period
+        setExchanges(prev => prev.map(ex => {
+          const newCVD = cumulativeCVD[ex.id];
+          if (newCVD !== undefined) {
+            return {
+              ...ex,
+              cvd: newCVD,
+              trend: newCVD - (ex.cvd || 0),
+              status: ex.status === 'loading' ? 'success' : ex.status
+            };
+          }
+          return ex;
+        }));
+      } else {
+        setHistoricalData([]);
       }
     } catch (error) {
       console.error('Load history error:', error);
@@ -139,14 +177,6 @@ const XRPCVDTracker = () => {
     const newErrors = [];
     
     try {
-      // CRITICAL: Load historical data FIRST on initial load
-      if (!initialized) {
-        console.log('🔄 FIRST RUN - Loading baselines from database...');
-        await loadHistoricalData();
-        setInitialized(true);
-        console.log('✅ Baselines loaded:', baselinesRef.current);
-      }
-
       // Get XRP price
       let currentPrice = xrpPrice;
       try {
@@ -157,36 +187,17 @@ const XRPCVDTracker = () => {
         newErrors.push(`Fiyat: ${error.message}`);
       }
 
-      // Fetch data from all exchanges
+      // Fetch raw buy/sell volume data from all exchanges
       const updatedExchanges = await Promise.all(
         exchanges.map(async (exchange) => {
           try {
             const data = await fetchExchangeData(exchange.id);
-
-            // Get or set baseline using ref
-            // IMPORTANT: Don't reset baseline if it's already loaded from database
-            if (!baselinesRef.current[exchange.id]) {
-              baselinesRef.current[exchange.id] = data.buyVolume - data.sellVolume;
-              console.log(`[${exchange.id}] NEW baseline: ${baselinesRef.current[exchange.id]}`);
-            } else {
-              console.log(`[${exchange.id}] EXISTING baseline: ${baselinesRef.current[exchange.id]}`);
-            }
-
-            const baseline = baselinesRef.current[exchange.id];
-            const currentDelta = data.buyVolume - data.sellVolume;
-            const cvdFromBaseline = currentDelta - baseline;
-            const trend = cvdFromBaseline - (exchange.cvd || 0);
-
-            console.log(`[${exchange.id}] CVD: ${cvdFromBaseline.toFixed(2)}, Delta: ${currentDelta.toFixed(2)}, Baseline: ${baseline.toFixed(2)}`);
-
             return {
               ...exchange,
-              cvd: cvdFromBaseline,
               volume24h: data.volume,
               buyVolume: data.buyVolume,
               sellVolume: data.sellVolume,
               price: data.price,
-              trend: trend,
               buyRatio: data.buyVolume / data.volume,
               status: 'success'
             };
@@ -203,34 +214,11 @@ const XRPCVDTracker = () => {
       setExchanges(updatedExchanges);
       setErrors(newErrors);
 
-      // Save to database
-      const exchangesWithBaseline = updatedExchanges.map(ex => ({
-        ...ex,
-        baseline: baselinesRef.current[ex.id] || 0
-      }));
-      await saveCVDData(exchangesWithBaseline, currentPrice);
+      // Save raw buy/sell volumes to database
+      await saveCVDData(updatedExchanges, currentPrice);
 
-      // Update historical data
-      const timestamp = new Date().toLocaleTimeString('tr-TR', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit' 
-      });
-      
-      setHistoricalData(prev => {
-        const newData = [...prev, {
-          time: timestamp,
-          xrpPrice: currentPrice, // Add XRP price
-          ...updatedExchanges.reduce((acc, ex) => {
-            if (ex.status === 'success') {
-              acc[ex.name] = ex.cvd / 1000000;
-            }
-            return acc;
-          }, {})
-        }];
-        
-        return newData.slice(-100);
-      });
+      // Reload cumulative CVD from database for the selected period
+      await loadHistoricalData(selectedPeriod);
 
       setLastUpdate(new Date());
     } catch (error) {
@@ -245,11 +233,20 @@ const XRPCVDTracker = () => {
   const updateDataRef = useRef(null);
   updateDataRef.current = updateData;
 
+  const loadHistoricalDataRef = useRef(null);
+  loadHistoricalDataRef.current = loadHistoricalData;
+
+  // Initial load: fetch historical data immediately, then start 30s polling
   useEffect(() => {
     updateDataRef.current();
     const interval = setInterval(() => updateDataRef.current(), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Reload cumulative CVD whenever the selected period changes
+  useEffect(() => {
+    loadHistoricalDataRef.current(selectedPeriod);
+  }, [selectedPeriod]);
 
   // Update brush when data changes
   useEffect(() => {
@@ -279,6 +276,7 @@ const XRPCVDTracker = () => {
   const successfulExchanges = exchanges.filter(ex => ex.status === 'success');
   const positiveCVD = exchanges.filter(ex => ex.status === 'success' && ex.cvd > 0).length;
   const negativeCVD = exchanges.filter(ex => ex.status === 'success' && ex.cvd < 0).length;
+  const selectedPeriodLabel = PERIODS.find(p => p.value === selectedPeriod)?.label || '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
@@ -310,6 +308,23 @@ const XRPCVDTracker = () => {
               Yenile
             </button>
           </div>
+
+          {/* Period Selector */}
+          <div className="flex gap-2 mb-4">
+            {PERIODS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setSelectedPeriod(p.value)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                  selectedPeriod === p.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           
           {errors.length > 0 && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
@@ -331,7 +346,7 @@ const XRPCVDTracker = () => {
               <div className="text-2xl font-bold text-white">{formatCurrency(xrpPrice)}</div>
             </div>
             <div className="bg-slate-700/50 rounded-xl p-4">
-              <div className="text-blue-400 text-sm mb-1">Toplam CVD</div>
+              <div className="text-blue-400 text-sm mb-1">Toplam CVD ({selectedPeriodLabel})</div>
               <div className={`text-2xl font-bold ${totalCVD >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 {totalCVD >= 0 ? '+' : ''}{formatNumber(totalCVD)}
               </div>
@@ -361,7 +376,7 @@ const XRPCVDTracker = () => {
         {historicalData.length > 1 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
             <h2 className="text-xl font-bold text-white mb-4">
-              CVD Zaman Serisi + XRP Fiyatı - {historicalData.length} veri noktası
+              Kümülatif CVD ({selectedPeriodLabel}) - {historicalData.length} veri noktası
             </h2>
             <ResponsiveContainer width="100%" height={500}>
               <LineChart data={historicalData}>
@@ -377,7 +392,7 @@ const XRPCVDTracker = () => {
                 <YAxis 
                   yAxisId="left"
                   stroke="#94a3b8" 
-                  label={{ value: 'CVD (Milyon XRP)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
+                  label={{ value: 'Kümülatif CVD (Milyon XRP)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
                   domain={['auto', 'auto']}
                 />
                 {/* Right Y-axis for XRP Price - Auto scale from min to max */}
@@ -445,7 +460,7 @@ const XRPCVDTracker = () => {
               </LineChart>
             </ResponsiveContainer>
             <div className="mt-3 text-xs text-blue-300 space-y-1">
-              <p>• Sol eksen: CVD (Milyon XRP) | Sağ eksen: XRP Fiyatı ($) - Kesikli altın çizgi</p>
+              <p>• Sol eksen: Kümülatif CVD (Milyon XRP) | Sağ eksen: XRP Fiyatı ($) - Kesikli altın çizgi</p>
               <p>• Alt kısımdaki kaydırıcı ile zaman aralığını seçebilirsiniz (zoom/pan)</p>
               <p>• Her iki eksen de otomatik min-max değerlere göre ölçeklenir</p>
             </div>
@@ -499,7 +514,7 @@ const XRPCVDTracker = () => {
                   <>
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div>
-                        <div className="text-blue-400 text-xs mb-1">CVD</div>
+                        <div className="text-blue-400 text-xs mb-1">CVD ({selectedPeriodLabel})</div>
                         <div className={`text-xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {isPositive ? '+' : ''}{formatNumber(cvdValue)}
                         </div>
@@ -542,7 +557,7 @@ const XRPCVDTracker = () => {
         {/* CVD Bar Chart */}
         {successfulExchanges.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında CVD Karşılaştırması</h2>
+            <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında Kümülatif CVD ({selectedPeriodLabel})</h2>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={successfulExchanges.map(ex => ({ 
                 name: ex.name, 
@@ -555,7 +570,7 @@ const XRPCVDTracker = () => {
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px' }}
                   labelStyle={{ color: '#cbd5e1' }}
-                  formatter={(value) => [`${value >= 0 ? '+' : ''}${value.toFixed(2)}M XRP`, 'CVD']}
+                  formatter={(value) => [`${value >= 0 ? '+' : ''}${value.toFixed(2)}M XRP`, 'Kümülatif CVD']}
                 />
                 <Bar dataKey="CVD" radius={[8, 8, 0, 0]}>
                   {successfulExchanges.map((entry, index) => (
@@ -576,12 +591,12 @@ const XRPCVDTracker = () => {
             </p>
             <p>
               <strong>🔴 CANLI VERİ:</strong> Her borsa kendi API'sinden gerçek veri çekiyor.
-              Baseline her 30 saniyede korunuyor.
+              CVD her 30 saniyede güncellenir ve veritabanına kaydedilir.
             </p>
             <p className="text-xs text-blue-300">
-              • CVD her 30 saniyede güncellenir ve veritabanına kaydedilir<br/>
-              • Baseline değerleri bellekte (useRef) saklanır - sıfırlanmaz<br/>
-              • Son 100 veri noktası grafikte gösterilir (~50 dakika)
+              • Kümülatif CVD = seçilen başlangıç tarihinden itibaren Σ(alım - satım) delta'larının toplamı<br/>
+              • Yükselen = net alım baskısı, düşen = net satım baskısı<br/>
+              • Tarayıcı kapansa bile veri Supabase'den yüklenir, sıfırlanmaz
             </p>
           </div>
         </div>
