@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush, Cell } from 'recharts';
-import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database, Trash2 } from 'lucide-react';
 
 const EXCHANGES_CONFIG = [
   { name: 'Binance',  id: 'binance',  color: '#FF0000' },
@@ -25,7 +25,6 @@ const PERIODS = [
   { label: 'Tümü', value: 'all' },
 ];
 
-// Format a UTC ISO timestamp for display using user's local timezone
 const formatTimestamp = (isoString, period) => {
   const date = new Date(isoString);
   if (period === '1h' || period === '6h') {
@@ -53,6 +52,8 @@ const XRPCVDTracker = () => {
   const [dbConnected, setDbConnected] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [brushIndex, setBrushIndex] = useState({ startIndex: 0, endIndex: 0 });
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState('');
 
   const fetchExchangeData = async (exchangeId) => {
     const response = await fetch(`/api/exchange?exchange=${exchangeId}`);
@@ -90,7 +91,6 @@ const XRPCVDTracker = () => {
       const { history } = await response.json();
 
       if (history && history.length > 0) {
-        // Server already computed cumulative_cvd using delta method
         const bucketMap = {};
         const finalCVD = {};
 
@@ -197,6 +197,33 @@ const XRPCVDTracker = () => {
     setIsLoading(false);
   };
 
+  const cleanupData = async () => {
+    if (!window.confirm('Tüm CVD geçmişi silinecek. Emin misiniz?')) return;
+
+    setIsCleaning(true);
+    setCleanupMessage('');
+
+    try {
+      const response = await fetch('/api/cleanup', { method: 'DELETE' });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setCleanupMessage(`❌ Hata: ${result.error}`);
+      } else {
+        setCleanupMessage(`✅ Silindi: ${result.deleted_history} kayıt temizlendi.`);
+        setHistoricalData([]);
+        setSavedCount(0);
+        setExchanges(prev => prev.map(ex => ({ ...ex, cvd: 0, trend: 0 })));
+        setTimeout(() => updateDataRef.current(), 1500);
+      }
+    } catch (error) {
+      setCleanupMessage(`❌ Hata: ${error.message}`);
+    }
+
+    setIsCleaning(false);
+    setTimeout(() => setCleanupMessage(''), 5000);
+  };
+
   const updateDataRef = useRef(null);
   updateDataRef.current = updateData;
 
@@ -236,7 +263,6 @@ const XRPCVDTracker = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
       <div className="max-w-7xl mx-auto">
 
-        {/* Header */}
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
@@ -254,17 +280,31 @@ const XRPCVDTracker = () => {
                 </div>
               </div>
             </div>
-            <button
-              onClick={updateData}
-              disabled={isLoading}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
-              Yenile
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={updateData}
+                disabled={isLoading}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+                Yenile
+              </button>
+              <button
+                onClick={cleanupData}
+                disabled={isCleaning}
+                className="flex items-center gap-2 bg-red-700 hover:bg-red-800 disabled:bg-red-900 text-white px-4 py-2 rounded-lg transition-colors"
+                title="Tüm veritabanı kayıtlarını temizle"
+              >
+                <Trash2 className={`w-5 h-5 ${isCleaning ? 'animate-spin' : ''}`} />
+                {isCleaning ? 'Temizleniyor...' : 'Veritabanını Temizle'}
+              </button>
+            </div>
           </div>
 
-          {/* Period Selector */}
+          {cleanupMessage && (
+            <div className={`rounded-lg p-3 mb-4 text-sm font-semibold ${cleanupMessage.startsWith('✅') ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>{cleanupMessage}</div>
+          )}
+
           <div className="flex gap-2 mb-4">
             {PERIODS.map(p => (
               <button
@@ -299,9 +339,7 @@ const XRPCVDTracker = () => {
             </div>
             <div className="bg-slate-700/50 rounded-xl p-4">
               <div className="text-blue-400 text-sm mb-1">Toplam CVD ({selectedPeriodLabel})</div>
-              <div className={`text-2xl font-bold ${totalCVD >= 0 ? 'text-green-400' : 'text-red-400'}`}>    
-                {totalCVD >= 0 ? '+' : ''}{formatNumber(totalCVD)}
-              </div>
+              <div className={`text-2xl font-bold ${totalCVD >= 0 ? 'text-green-400' : 'text-red-400'}`}>{totalCVD >= 0 ? '+' : ''}{formatNumber(totalCVD)}</div>
             </div>
             <div className="bg-slate-700/50 rounded-xl p-4">
               <div className="text-blue-400 text-sm mb-1">Piyasa Duygusu</div>
@@ -320,12 +358,9 @@ const XRPCVDTracker = () => {
           </div>
         </div>
 
-        {/* CVD Line Chart */}
         {historicalData.length > 1 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-blue-500/20">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Kümülatif CVD ({selectedPeriodLabel}) - {historicalData.length} veri noktası
-            </h2>
+            <h2 className="text-xl font-bold text-white mb-4">Kümülatif CVD ({selectedPeriodLabel}) - {historicalData.length} veri noktası</h2>
             <ResponsiveContainer width="100%" height={500}>
               <LineChart data={historicalData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -402,7 +437,6 @@ const XRPCVDTracker = () => {
           </div>
         )}
 
-        {/* Exchange Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {exchanges.map((exchange) => {
             const cvdValue = exchange.cvd;
@@ -423,15 +457,13 @@ const XRPCVDTracker = () => {
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: exchange.color }} />
                     <h3 className="text-lg font-bold text-white">{exchange.name}</h3>
                     {exchange.status === 'loading' && <span className="text-xs text-blue-400 animate-pulse">Yükleniyor...</span>}
-                    {exchange.status === 'error'   && <span className="text-xs text-red-400">❌ Hata</span>}
+                    {exchange.status === 'error' && <span className="text-xs text-red-400">❌ Hata</span>}
                     {exchange.status === 'success' && <span className="text-xs text-green-400">✓</span>}
                   </div>
                   {exchange.status === 'success' && (
-                    <div className={`flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>  
+                    <div className={`flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}> 
                       {isPositive ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                      <span className="text-sm font-semibold">
-                        {isPositive ? '+' : ''}{formatNumber(exchange.trend)}
-                      </span>
+                      <span className="text-sm font-semibold">{isPositive ? '+' : ''}{formatNumber(exchange.trend)}</span>
                     </div>
                   )}
                 </div>
@@ -441,9 +473,7 @@ const XRPCVDTracker = () => {
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div>
                         <div className="text-blue-400 text-xs mb-1">CVD ({selectedPeriodLabel})</div>
-                        <div className={`text-xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>  
-                          {isPositive ? '+' : ''}{formatNumber(cvdValue)}
-                        </div>
+                        <div className={`text-xl font-bold ${isPositive ? 'text-green-400' : 'text-red-400'}`}>{isPositive ? '+' : ''}{formatNumber(cvdValue)}</div>
                       </div>
                       <div>
                         <div className="text-blue-400 text-xs mb-1">24s Hacim</div>
@@ -456,10 +486,7 @@ const XRPCVDTracker = () => {
                         <span className="text-green-400">{buyPercentage.toFixed(2)}%</span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-green-500 to-green-400 h-full transition-all duration-500"
-                          style={{ width: `${buyPercentage}%` }}
-                        />
+                        <div className="bg-gradient-to-r from-green-500 to-green-400 h-full transition-all duration-500" style={{ width: `${buyPercentage}%` }} />
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-red-400">Satım: {formatNumber(exchange.sellVolume)}</span>
@@ -477,15 +504,11 @@ const XRPCVDTracker = () => {
           })}
         </div>
 
-        {/* Bar Chart */}
         {successfulExchanges.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-blue-500/20">
             <h2 className="text-xl font-bold text-white mb-4">Borsa Bazında Kümülatif CVD ({selectedPeriodLabel})</h2>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={successfulExchanges.map(ex => ({
-                name: ex.name,
-                CVD: ex.cvd / 1_000_000,
-              }))}>
+              <BarChart data={successfulExchanges.map(ex => ({ name: ex.name, CVD: ex.cvd / 1_000_000 }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" stroke="#94a3b8" angle={-45} textAnchor="end" height={100} />
                 <YAxis stroke="#94a3b8" label={{ value: 'Milyon XRP', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} />
@@ -504,21 +527,14 @@ const XRPCVDTracker = () => {
           </div>
         )}
 
-        {/* Footer */}
         <div className="mt-6 bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-blue-500/20">
           <div className="text-blue-400 text-sm space-y-2">
-            <p>
-              <strong>🗄️ KALICI VERİ SAKLAMA:</strong> CVD verileri Supabase PostgreSQL veritabanında saklanıyor.
-              {dbConnected ? ' ✅ Bağlı' : ' ❌ Bağlantı yok'}
-            </p>
-            <p>
-              <strong>🔴 CANLI VERİ:</strong> Her borsa kendi API'sinden gerçek veri çekiyor.
-              CVD her 30 saniyede güncellenir ve veritabanına kaydedilir.
-            </p>
+            <p><strong>🗄️ KALICI VERİ SAKLAMA:</strong> CVD verileri Supabase PostgreSQL veritabanında saklanıyor. {dbConnected ? ' ✅ Bağlı' : ' ❌ Bağlantı yok'}</p>
+            <p><strong>🔴 CANLI VERİ:</strong> Her borsa kendi API'sinden gerçek veri çekiyor. CVD her 30 saniyede güncellenir ve veritabanına kaydedilir.</p>
             <p className="text-xs text-blue-300">
-              • Kümülatif CVD = her 30 saniyedeki delta'ların (net alım − net satım değişimi) toplamı<br />
-              • Yükselen = net alım baskısı, düşen = net satım baskısı<br />
-              • Zaman etiketleri tarayıcınızın yerel saatine göre gösterilir
+              • Kümülatif CVD = seçilen başlangıç tarihinden itibaren Σ(alım - satım) delta'larının toplamı<br/>
+              • Yükselen = net alım baskısı, düşen = net satım baskısı<br/>
+              • Tarayıcı kapansa bile veri Supabase'den yüklenir, sıfırlanmaz
             </p>
           </div>
         </div>
