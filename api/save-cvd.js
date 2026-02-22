@@ -34,20 +34,40 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
+    const successfulExchanges = exchanges.filter(ex => ex.status === 'success');
+
+    const previousDeltaByExchange = {};
+    await Promise.all(
+      successfulExchanges.map(async (ex) => {
+        const { data: prevRow } = await supabase
+          .from('cvd_history')
+          .select('buy_volume, sell_volume')
+          .eq('exchange', ex.id)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (prevRow) {
+          previousDeltaByExchange[ex.id] = (prevRow.buy_volume || 0) - (prevRow.sell_volume || 0);
+        }
+      })
+    );
 
     // Save CVD history for each exchange
-    // cvd column: use buy_volume - sell_volume as the delta for this snapshot
-    const cvdRecords = exchanges
-      .filter(ex => ex.status === 'success')
-      .map(ex => ({
+    // cvd column: interval delta between the latest and previous snapshot
+    const cvdRecords = successfulExchanges.map(ex => {
+      const snapshotDelta = (ex.buyVolume || 0) - (ex.sellVolume || 0);
+      const previousSnapshotDelta = previousDeltaByExchange[ex.id];
+      return {
         timestamp: now,
         exchange: ex.id,
-        cvd: (ex.buyVolume || 0) - (ex.sellVolume || 0),
+        cvd: previousSnapshotDelta === undefined ? 0 : snapshotDelta - previousSnapshotDelta,
         volume: ex.volume24h || 0,
         buy_volume: ex.buyVolume || 0,
         sell_volume: ex.sellVolume || 0,
         price: ex.price || xrpPrice || 0,
-      }));
+      };
+    });
 
     if (cvdRecords.length > 0) {
       const { error: historyError } = await supabase
