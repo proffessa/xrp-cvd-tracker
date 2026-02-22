@@ -37,7 +37,7 @@ export default async function handler(req, res) {
 
     let query = supabase
       .from('cvd_history')
-      .select('id, timestamp, exchange, buy_volume, sell_volume, price')
+      .select('id, timestamp, exchange, cvd, buy_volume, sell_volume, price')
       .order('timestamp', { ascending: true });
 
     if (period !== 'all' && PERIOD_MS[period]) {
@@ -59,7 +59,9 @@ export default async function handler(req, res) {
 
     const enriched = (historyData || []).map(record => {
       const exId = record.exchange;
-      const delta = record.buy_volume - record.sell_volume;
+      const delta = Number.isFinite(record.cvd)
+        ? record.cvd
+        : (record.buy_volume || 0) - (record.sell_volume || 0);
 
       if (cumulMap[exId] === undefined) cumulMap[exId] = 0;
       cumulMap[exId] += delta;
