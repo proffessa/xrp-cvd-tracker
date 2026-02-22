@@ -46,44 +46,27 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        // Get baseline from database
-        const { data: latestData } = await supabase
-          .from('cvd_latest')
-          .select('baseline, cvd')
+        // Get previous row from cvd_history to compute interval delta
+        const { data: prevRow } = await supabase
+          .from('cvd_history')
+          .select('buy_volume, sell_volume')
           .eq('exchange', exchangeId)
-          .single();
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        let baseline = latestData?.baseline;
-
-        // If no baseline, set it now
-        if (!baseline) {
-          baseline = data.buyVolume - data.sellVolume;
-        }
-
-        // Calculate CVD
-        const currentDelta = data.buyVolume - data.sellVolume;
-        const cvd = currentDelta - baseline;
+        const intervalDelta = prevRow
+          ? (data.buyVolume - data.sellVolume) - (prevRow.buy_volume - prevRow.sell_volume)
+          : 0;
 
         // Save to history
         await supabase.from('cvd_history').insert({
           exchange: exchangeId,
-          cvd: cvd,
+          cvd: intervalDelta,
           volume: data.volume,
           buy_volume: data.buyVolume,
           sell_volume: data.sellVolume,
           price: data.price
-        });
-
-        // Update latest
-        await supabase.from('cvd_latest').upsert({
-          exchange: exchangeId,
-          cvd: cvd,
-          volume: data.volume,
-          buy_volume: data.buyVolume,
-          sell_volume: data.sellVolume,
-          price: data.price,
-          baseline: baseline,
-          updated_at: new Date().toISOString()
         });
 
         if (data.price > 0) {
@@ -92,7 +75,7 @@ export default async function handler(req, res) {
 
         results.push({
           exchange: exchangeId,
-          cvd: cvd,
+          cvd: intervalDelta,
           status: 'success'
         });
 
