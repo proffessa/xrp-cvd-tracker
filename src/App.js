@@ -29,6 +29,7 @@ const PERIODS = [
   { label: '1S',   value: '1h' },
   { label: '6S',   value: '6h' },
   { label: '1G',   value: '1d' },
+  { label: '5G',   value: '5d' },
   { label: '1H',   value: '1w' },
   { label: '1A',   value: '1m' },
   { label: '3A',   value: '3m' },

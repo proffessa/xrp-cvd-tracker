@@ -7,10 +7,13 @@ const PERIOD_MS = {
   '1h':  1 * 60 * 60 * 1000,
   '6h':  6 * 60 * 60 * 1000,
   '1d': 24 * 60 * 60 * 1000,
+  '5d':  5 * 24 * 60 * 60 * 1000,
   '1w':  7 * 24 * 60 * 60 * 1000,
   '1m': 30 * 24 * 60 * 60 * 1000,
   '3m': 90 * 24 * 60 * 60 * 1000,
 };
+
+const ROW_LIMIT_PER_EXCHANGE = 5000;
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -43,35 +46,37 @@ export default async function handler(req, res) {
       .map(exchange => exchange.trim().toLowerCase())
       .filter(Boolean);
 
-    let query = supabase
-      .from('futures_history')
-      .select('exchange, cvd_delta, open_interest, long_vol, short_vol, price, timestamp')
-      // NOTE: Supabase may cap rows per request (e.g. 1000). Fetch newest rows first,
-      // then reverse below so frontend receives chronological points.
-      .order('timestamp', { ascending: false })
-      .limit(50000);
+    const startDate = (period !== 'all' && PERIOD_MS[period])
+      ? new Date(Date.now() - PERIOD_MS[period]).toISOString()
+      : null;
 
-    if (exchangeList.length > 0) {
-      query = query.in('exchange', exchangeList);
-    }
+    const queryForExchange = async (exchangeId) => {
+      let query = supabase
+        .from('futures_history')
+        .select('exchange, cvd_delta, open_interest, long_vol, short_vol, price, timestamp')
+        .eq('exchange', exchangeId)
+        .order('timestamp', { ascending: false })
+        .limit(ROW_LIMIT_PER_EXCHANGE);
 
-    if (period !== 'all' && PERIOD_MS[period]) {
-      const startDate = new Date(Date.now() - PERIOD_MS[period]);
-      query = query.gte('timestamp', startDate.toISOString());
-    }
+      if (startDate) {
+        query = query.gte('timestamp', startDate);
+      }
 
-    const { data: historyData, error: historyError } = await query;
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    };
 
-    if (historyError) {
-      console.error('Error fetching futures history:', historyError);
-      return res.status(500).json({ error: 'Failed to fetch futures history' });
-    }
+    const groupedRows = await Promise.all(exchangeList.map(queryForExchange));
+    const historyData = groupedRows
+      .flat()
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     // Query is newest-first; reverse so cumulative calculation is oldest->newest.
     const sortedHistory = (historyData || []).slice().reverse();
     const cumulMap = {};
 
-    const enriched = sortedHistory.map(record => {
+    const enriched = historyData.map(record => {
       const exId = record.exchange;
       const delta = Number.isFinite(record.cvd_delta) ? record.cvd_delta : 0;
 

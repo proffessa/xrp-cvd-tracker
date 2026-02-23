@@ -1,15 +1,20 @@
 // api/get-history.js - Get CVD history from Supabase
 import { createClient } from '@supabase/supabase-js';
 
+const DEFAULT_SPOT_EXCHANGES = ['binance', 'upbit', 'kucoin', 'kraken', 'coinbase', 'bitfinex', 'bitstamp', 'gate', 'okx', 'bybit'];
+
 // Map period strings to milliseconds
 const PERIOD_MS = {
   '1h':  1 * 60 * 60 * 1000,
   '6h':  6 * 60 * 60 * 1000,
   '1d': 24 * 60 * 60 * 1000,
+  '5d':  5 * 24 * 60 * 60 * 1000,
   '1w':  7 * 24 * 60 * 60 * 1000,
   '1m': 30 * 24 * 60 * 60 * 1000,
   '3m': 90 * 24 * 60 * 60 * 1000,
 };
+
+const ROW_LIMIT_PER_EXCHANGE = 5000;
 
 export default async function handler(req, res) {
   // CORS headers
@@ -33,28 +38,37 @@ export default async function handler(req, res) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { period = '1d' } = req.query;
+    const { period = '1d', exchanges } = req.query;
+    const exchangeList = String(exchanges || DEFAULT_SPOT_EXCHANGES.join(','))
+      .split(',')
+      .map(exchange => exchange.trim().toLowerCase())
+      .filter(Boolean);
 
-    let query = supabase
-      .from('cvd_history')
-      .select('id, timestamp, exchange, cvd, buy_volume, sell_volume, price')
-      .order('timestamp', { ascending: false })
-      .limit(1000);
+    const startDate = (period !== 'all' && PERIOD_MS[period])
+      ? new Date(Date.now() - PERIOD_MS[period]).toISOString()
+      : null;
 
-    if (period !== 'all' && PERIOD_MS[period]) {
-      const startDate = new Date(Date.now() - PERIOD_MS[period]);
-      query = query.gte('timestamp', startDate.toISOString());
-    }
+    const queryForExchange = async (exchangeId) => {
+      let query = supabase
+        .from('cvd_history')
+        .select('id, timestamp, exchange, cvd, buy_volume, sell_volume, price')
+        .eq('exchange', exchangeId)
+        .order('timestamp', { ascending: false })
+        .limit(ROW_LIMIT_PER_EXCHANGE);
 
-    const { data: historyData, error: historyError } = await query;
+      if (startDate) {
+        query = query.gte('timestamp', startDate);
+      }
 
-    if (historyError) {
-      console.error('Error fetching history:', historyError);
-      return res.status(500).json({ error: 'Failed to fetch history' });
-    }
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    };
 
-    // Reverse so data is oldest-first for cumulative calculation
-    const sorted = (historyData || []).reverse();
+    const groupedRows = await Promise.all(exchangeList.map(queryForExchange));
+    const sorted = groupedRows
+      .flat()
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     // Each saved record contains a net delta (buy_volume - sell_volume)
     // cvd===0 means old seed row — fall back to buy_volume - sell_volume
