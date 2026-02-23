@@ -139,7 +139,9 @@ const XRPCVDTracker = () => {
   const loadFuturesData = async (period) => {
     try {
       setFuturesLoading(true);
-      const response = await fetch(`/api/get-futures-history?period=${period}`);
+      const response = await fetch(`/api/get-futures-history?period=${period}&t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error('Failed to load futures history');
       const { history } = await response.json();
 
