@@ -39,8 +39,8 @@ export default async function handler(req, res) {
   try {
     let data = null;
 
+    // ─── BINANCE ────────────────────────────────────────────────────────────────
     if (exchange === 'binance') {
-      // takerBuySellVol returns 404 from sin1; use ticker + topLongShortPositionRatio instead
       const [tickerJson, oiJson, lsJson] = await Promise.all([
         safeFetch('https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=XRPUSDT'),
         safeFetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=XRPUSDT'),
@@ -66,19 +66,18 @@ export default async function handler(req, res) {
 
       const longVol = openInterest * buyRatio;
       const shortVol = openInterest * sellRatio;
-      // cvdDelta: net taker buy volume for this 5-min interval
       const cvdDelta = (vol24h * (buyRatio - sellRatio)) / 288;
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
+
+    // ─── BYBIT ──────────────────────────────────────────────────────────────────
     else if (exchange === 'bybit') {
-      // Both api.bybit.com and api.bytick.com work from sin1 region
       const [tickerJson, ratioJson] = await Promise.all([
         safeFetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=XRPUSDT'),
         safeFetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=1h&limit=1'),
       ]);
 
-      // fallback to bytick if bybit fails
       const ticker0 = tickerJson?.retCode === 0 ? tickerJson : await safeFetch('https://api.bytick.com/v5/market/tickers?category=linear&symbol=XRPUSDT');
       const ratio0 = ratioJson?.retCode === 0 ? ratioJson : await safeFetch('https://api.bytick.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=1h&limit=1');
 
@@ -98,6 +97,8 @@ export default async function handler(req, res) {
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
+
+    // ─── OKX ────────────────────────────────────────────────────────────────────
     else if (exchange === 'okx') {
       const [priceJson, oiJson] = await Promise.all([
         safeFetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT-SWAP'),
@@ -127,6 +128,109 @@ export default async function handler(req, res) {
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
+
+    // ─── KUCOIN ─────────────────────────────────────────────────────────────────
+    else if (exchange === 'kucoin') {
+      const [tickerJson, contractJson] = await Promise.all([
+        safeFetch('https://api-futures.kucoin.com/api/v1/ticker?symbol=XRPUSDTM'),
+        safeFetch('https://api-futures.kucoin.com/api/v1/contracts/XRPUSDTM'),
+      ]);
+
+      if (!tickerJson || tickerJson.code !== '200000') throw new Error('kucoin: futures ticker failed');
+
+      const ticker = tickerJson.data;
+      const price = parseFloat(ticker.price);
+      const bestBidSize = parseFloat(ticker.bestBidSize || 0);
+      const bestAskSize = parseFloat(ticker.bestAskSize || 0);
+      const totalSize = bestBidSize + bestAskSize || 1;
+      const buyRatio = Math.max(0.45, Math.min(0.55, bestBidSize / totalSize));
+      const sellRatio = 1 - buyRatio;
+
+      let openInterest = 0;
+      if (contractJson && contractJson.code === '200000' && contractJson.data) {
+        const multiplier = parseFloat(contractJson.data.multiplier || 1);
+        openInterest = parseFloat(contractJson.data.openInterest || 0) * multiplier;
+      }
+
+      const longVol = openInterest * buyRatio;
+      const shortVol = openInterest * sellRatio;
+      const cvdDelta = openInterest * (buyRatio - sellRatio) / 288;
+
+      data = { cvdDelta, openInterest, longVol, shortVol, price };
+    }
+
+    // ─── GATE.IO ─────────────────────────────────────────────────────────────────
+    else if (exchange === 'gate') {
+      const tickersJson = await safeFetch('https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=XRP_USDT');
+
+      if (!tickersJson || !Array.isArray(tickersJson) || tickersJson.length === 0) throw new Error('gate: futures ticker failed');
+
+      const ticker = tickersJson[0];
+      const price = parseFloat(ticker.last);
+      const vol24h = parseFloat(ticker.volume_24h_base || ticker.volume_24h || 0);
+      const changePercent = parseFloat(ticker.change_percentage || 0);
+      const buyRatio = Math.max(0.45, Math.min(0.55, 0.50 + (changePercent / 100) * 0.3));
+      const sellRatio = 1 - buyRatio;
+      const openInterest = parseFloat(ticker.open_interest || 0);
+
+      const longVol = openInterest * buyRatio;
+      const shortVol = openInterest * sellRatio;
+      const cvdDelta = vol24h * (buyRatio - sellRatio) / 288;
+
+      data = { cvdDelta, openInterest, longVol, shortVol, price };
+    }
+
+    // ─── KRAKEN ──────────────────────────────────────────────────────────────────
+    else if (exchange === 'kraken') {
+      const tickerJson = await safeFetch('https://futures.kraken.com/derivatives/api/v3/tickers');
+
+      if (!tickerJson || tickerJson.result !== 'success') throw new Error('kraken: futures tickers failed');
+
+      const ticker = tickerJson.tickers?.find(t => t.symbol === 'pf_xrpusd' || t.symbol === 'pi_xrpusd');
+      if (!ticker) throw new Error('kraken: XRPUSD futures ticker not found');
+
+      const price = parseFloat(ticker.last || ticker.markPrice);
+      const openInterest = parseFloat(ticker.openInterest || 0);
+      const vol24h = parseFloat(ticker.vol24h || 0);
+      // Kraken does not expose long/short ratio — use neutral 50/50
+      const buyRatio = 0.5;
+      const sellRatio = 0.5;
+
+      const longVol = openInterest * buyRatio;
+      const shortVol = openInterest * sellRatio;
+      const cvdDelta = vol24h * (buyRatio - sellRatio) / 288;
+
+      data = { cvdDelta, openInterest, longVol, shortVol, price };
+    }
+
+    // ─── BITFINEX ────────────────────────────────────────────────────────────────
+    else if (exchange === 'bitfinex') {
+      const [tickerJson, oiJson] = await Promise.all([
+        safeFetch('https://api-pub.bitfinex.com/v2/ticker/tXRPF0:USTF0'),
+        safeFetch('https://api-pub.bitfinex.com/v2/stats1/pos.size:1m:tXRPF0:USTF0/last'),
+      ]);
+
+      if (!tickerJson || !Array.isArray(tickerJson)) throw new Error('bitfinex: futures ticker failed');
+
+      // [BID, BID_SIZE, ASK, ASK_SIZE, DAILY_CHANGE, DAILY_CHANGE_RELATIVE, LAST_PRICE, VOLUME, HIGH, LOW]
+      const price = parseFloat(tickerJson[6]);
+      const vol24h = parseFloat(tickerJson[7]);
+      const dailyChangeRelative = parseFloat(tickerJson[4]);
+      const buyRatio = Math.max(0.45, Math.min(0.55, 0.50 + dailyChangeRelative * 0.3));
+      const sellRatio = 1 - buyRatio;
+
+      let openInterest = 0;
+      if (oiJson && Array.isArray(oiJson) && oiJson[1] !== undefined) {
+        openInterest = Math.abs(parseFloat(oiJson[1]));
+      }
+
+      const longVol = openInterest * buyRatio;
+      const shortVol = openInterest * sellRatio;
+      const cvdDelta = vol24h * (buyRatio - sellRatio) / 288;
+
+      data = { cvdDelta, openInterest, longVol, shortVol, price };
+    }
+
     else {
       return res.status(400).json({ error: `Unknown exchange: ${exchange}` });
     }
