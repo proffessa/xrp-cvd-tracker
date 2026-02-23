@@ -60,7 +60,7 @@ export default async function handler(req, res) {
 
     const enriched = (historyData || []).map(record => {
       const exId = record.exchange;
-      const delta = Number.isFinite(record.cvd)
+      const delta = (Number.isFinite(record.cvd) && record.cvd !== 0)
         ? record.cvd
         : (record.buy_volume || 0) - (record.sell_volume || 0);
 
