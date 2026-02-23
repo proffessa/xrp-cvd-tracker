@@ -38,7 +38,8 @@ export default async function handler(req, res) {
     let query = supabase
       .from('cvd_history')
       .select('id, timestamp, exchange, cvd, buy_volume, sell_volume, price')
-      .order('timestamp', { ascending: true });
+      .order('timestamp', { ascending: true })
+      .limit(10000);
 
     if (period !== 'all' && PERIOD_MS[period]) {
       const startDate = new Date(Date.now() - PERIOD_MS[period]);
