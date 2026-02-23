@@ -1,1 +1,1 @@
-{}
+{\n  "regions": ["sin1"],\n  "functions": {\n    "api/*.js": {\n      "memory": 1024,\n      "maxDuration": 30\n    }\n  }\n}
