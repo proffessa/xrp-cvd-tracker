@@ -44,91 +44,73 @@ export default async function handler(req, res) {
     let data = null;
 
     if (exchange === 'binance') {
-      const [takerJson, oiJson, lsJson, priceJson] = await Promise.all([
-        safeFetchWithFallback([
-          'https://fapi.binance.com/futures/data/takerBuySellVol?symbol=XRPUSDT&period=5m&limit=1',
-          'https://www.binance.com/futures/data/takerBuySellVol?symbol=XRPUSDT&period=5m&limit=1',
-        ]),
-        safeFetchWithFallback([
-          'https://fapi.binance.com/fapi/v1/openInterest?symbol=XRPUSDT',
-          'https://www.binance.com/fapi/v1/openInterest?symbol=XRPUSDT',
-        ]),
-        safeFetchWithFallback([
-          'https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=XRPUSDT&period=5m&limit=1',
-          'https://www.binance.com/futures/data/topLongShortPositionRatio?symbol=XRPUSDT&period=5m&limit=1',
-        ]),
-        safeFetchWithFallback([
-          'https://fapi.binance.com/fapi/v1/ticker/price?symbol=XRPUSDT',
-          'https://www.binance.com/fapi/v1/ticker/price?symbol=XRPUSDT',
-        ]),
+      const [klinesJson, oiJson, lsJson, bookJson] = await Promise.all([
+        safeFetch('https://fapi.binance.com/fapi/v1/klines?symbol=XRPUSDT&interval=5m&limit=2'),
+        safeFetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=XRPUSDT'),
+        safeFetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=XRPUSDT&period=5m&limit=1'),
+        safeFetch('https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=XRPUSDT'),
       ]);
 
-      if (!takerJson) throw new Error(`${exchange}: takerBuySellVol endpoint failed`);
-      if (!oiJson) throw new Error(`${exchange}: openInterest endpoint failed`);
-      if (!lsJson) throw new Error(`${exchange}: topLongShortPositionRatio endpoint failed`);
-      if (!priceJson) throw new Error(`${exchange}: ticker/price endpoint failed`);
+      if (!klinesJson) throw new Error('binance: klines endpoint failed');
+      if (!oiJson) throw new Error('binance: openInterest endpoint failed');
+      if (!lsJson) throw new Error('binance: topLongShortPositionRatio endpoint failed');
+      if (!bookJson) throw new Error('binance: bookTicker endpoint failed');
 
-      const latest = takerJson[0];
-      const cvdDelta = parseFloat(latest.buyVol) - parseFloat(latest.sellVol);
+      // limit=2 ile son tamamlanmış mumu al (index 0), en son mum henüz kapanmamış olabilir
+      const candle = klinesJson[0];
+      const totalVol = parseFloat(candle[5]);
+      const takerBuyVol = parseFloat(candle[9]);
+      const takerSellVol = totalVol - takerBuyVol;
+      const cvdDelta = takerBuyVol - takerSellVol;
+
       const openInterest = parseFloat(oiJson.openInterest);
       const lsLatest = lsJson[0];
       const longVol = openInterest * parseFloat(lsLatest.longAccount);
       const shortVol = openInterest * parseFloat(lsLatest.shortAccount);
-      const price = parseFloat(priceJson.price);
+      const price = parseFloat(bookJson.bidPrice);
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
     else if (exchange === 'bybit') {
-      const [tickerJson, oiJson, ratioJson] = await Promise.all([
+      const [tickerJson, ratioJson] = await Promise.all([
         safeFetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=XRPUSDT'),
-        safeFetch('https://api.bybit.com/v5/market/open-interest?category=linear&symbol=XRPUSDT&intervalTime=5min&limit=1'),
-        safeFetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=5min&limit=1'),
+        safeFetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=1h&limit=1'),
       ]);
 
-      if (!tickerJson) throw new Error(`${exchange}: tickers endpoint failed`);
-      if (!oiJson) throw new Error(`${exchange}: open-interest endpoint failed`);
-      if (!ratioJson) throw new Error(`${exchange}: account-ratio endpoint failed`);
+      if (!tickerJson || tickerJson.retCode !== 0) throw new Error('bybit: tickers endpoint failed');
+      if (!ratioJson || ratioJson.retCode !== 0) throw new Error('bybit: account-ratio endpoint failed');
 
-      const ticker = tickerJson?.result?.list?.[0];
-      const oiEntry = oiJson?.result?.list?.[0];
-      const ratio = ratioJson?.result?.list?.[0];
+      const ticker = tickerJson.result.list[0];
+      const ratio = ratioJson.result.list[0];
 
-      if (!ticker || !oiEntry || !ratio) throw new Error(`${exchange}: missing nested data in response`);
-
-      const openInterest = parseFloat(oiEntry.openInterest);
+      const openInterest = parseFloat(ticker.openInterest);
       const buyRatio = parseFloat(ratio.buyRatio);
+      const sellRatio = parseFloat(ratio.sellRatio);
       const longVol = openInterest * buyRatio;
-      const shortVol = openInterest * parseFloat(ratio.sellRatio);
-      const cvdDelta = parseFloat(ticker.volume24h) * (buyRatio - (1 - buyRatio)) / 288; // 288 = 24h * 60min / 5min intervals
+      const shortVol = openInterest * sellRatio;
+      const cvdDelta = parseFloat(ticker.volume24h) * (buyRatio - sellRatio) / 288; // 288 = 24h * 60min / 5min intervals
       const price = parseFloat(ticker.lastPrice);
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
     else if (exchange === 'okx') {
-      const [takerJson, oiJson, lsJson, priceJson] = await Promise.all([
-        safeFetch('https://www.okx.com/api/v5/market/taker-volume?instId=XRP-USDT-SWAP&instType=SWAP&period=5m&limit=1'),
-        safeFetch('https://www.okx.com/api/v5/market/open-interest?instId=XRP-USDT-SWAP'),
-        safeFetch('https://www.okx.com/api/v5/market/long-short-account-ratio?instId=XRP-USDT-SWAP&period=5m&limit=1'),
-        safeFetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT-SWAP'),
-      ]);
+      const priceJson = await safeFetch('https://www.okx.com/api/v5/market/ticker?instId=XRP-USDT-SWAP');
 
-      if (!takerJson) throw new Error(`${exchange}: taker-volume endpoint failed`);
-      if (!oiJson) throw new Error(`${exchange}: open-interest endpoint failed`);
-      if (!lsJson) throw new Error(`${exchange}: long-short-account-ratio endpoint failed`);
-      if (!priceJson) throw new Error(`${exchange}: ticker endpoint failed`);
+      if (!priceJson || priceJson.code !== '0') throw new Error('okx: ticker endpoint failed');
 
-      if (takerJson.code !== '0') throw new Error(`${exchange}: taker-volume error: ${takerJson.msg}`);
-      if (oiJson.code !== '0') throw new Error(`${exchange}: open-interest error: ${oiJson.msg}`);
-      if (lsJson.code !== '0') throw new Error(`${exchange}: long-short-account-ratio error: ${lsJson.msg}`);
-      if (priceJson.code !== '0') throw new Error(`${exchange}: ticker error: ${priceJson.msg}`);
+      const ticker = priceJson.data[0];
+      const price = parseFloat(ticker.last);
+      const open24h = parseFloat(ticker.open24h);
+      const vol24h = parseFloat(ticker.vol24h); // contract sayısı
+      const priceChange = (price - open24h) / open24h;
+      const buyRatio = Math.max(0.45, Math.min(0.55, 0.50 + priceChange * 0.3)); // clamp 45-55%, skew by price change
 
-      const takerRow = takerJson.data[0];
-      const cvdDelta = parseFloat(takerRow[2]) - parseFloat(takerRow[1]);
-      const openInterest = parseFloat(oiJson.data[0].oi);
-      const ratio = parseFloat(lsJson.data[0][1]);
-      const longVol = openInterest * (ratio / (1 + ratio));
-      const shortVol = openInterest * (1 / (1 + ratio));
-      const price = parseFloat(priceJson.data[0].last);
+      // openInterest için volCcy24h / 24h ortalama fiyat yaklaşımı
+      const avgPrice = (price + open24h) / 2;
+      const openInterest = parseFloat(ticker.volCcy24h) / avgPrice; // yaklaşım
+      const longVol = openInterest * buyRatio;
+      const shortVol = openInterest * (1 - buyRatio);
+      const cvdDelta = vol24h * (buyRatio - (1 - buyRatio)) / 288; // 288 = 24h * 60min / 5min intervals
 
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
