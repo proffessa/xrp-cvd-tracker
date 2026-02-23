@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-  const exchanges = ['binance', 'bybit', 'okx'];
+  const exchanges = ['binance', 'bybit', 'okx', 'kucoin', 'gate', 'kraken', 'bitfinex'];
   const baseUrl = process.env.SITE_URL || 'https://xrp-cvd-tracker.vercel.app';
   const results = [];
 
