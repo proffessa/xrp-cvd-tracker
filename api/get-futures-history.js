@@ -72,6 +72,8 @@ export default async function handler(req, res) {
       .flat()
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
+    // Query is newest-first; reverse so cumulative calculation is oldest->newest.
+    const sortedHistory = (historyData || []).slice().reverse();
     const cumulMap = {};
 
     const enriched = historyData.map(record => {
