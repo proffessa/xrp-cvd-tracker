@@ -3,9 +3,13 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { TrendingUp, TrendingDown, RefreshCw, Activity, AlertCircle, Database, Trash2 } from 'lucide-react';
 
 const FUTURES_EXCHANGES_CONFIG = [
-  { name: 'Binance Futures', id: 'binance', color: '#FF6B6B' },
-  { name: 'Bybit Futures',   id: 'bybit',   color: '#4ECDC4' },
-  { name: 'OKX Futures',     id: 'okx',     color: '#FFE66D' },
+  { name: 'Binance Futures',  id: 'binance',  color: '#FF6B6B' },
+  { name: 'Bybit Futures',    id: 'bybit',    color: '#4ECDC4' },
+  { name: 'OKX Futures',      id: 'okx',      color: '#FFE66D' },
+  { name: 'KuCoin Futures',   id: 'kucoin',   color: '#7C3AED' },
+  { name: 'Gate Futures',     id: 'gate',     color: '#22C55E' },
+  { name: 'Kraken Futures',   id: 'kraken',   color: '#F97316' },
+  { name: 'Bitfinex Futures', id: 'bitfinex', color: '#06B6D4' },
 ];
 
 const EXCHANGES_CONFIG = [
@@ -139,7 +143,8 @@ const XRPCVDTracker = () => {
   const loadFuturesData = async (period) => {
     try {
       setFuturesLoading(true);
-      const response = await fetch(`/api/get-futures-history?period=${period}&t=${Date.now()}`, {
+      const exchangesParam = FUTURES_EXCHANGES_CONFIG.map(ex => ex.id).join(',');
+      const response = await fetch(`/api/get-futures-history?period=${period}&exchanges=${exchangesParam}&t=${Date.now()}`, {
         cache: 'no-store',
       });
       if (!response.ok) throw new Error('Failed to load futures history');
