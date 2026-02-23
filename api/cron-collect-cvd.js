@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
         const intervalDelta = prevRow
           ? (data.buyVolume - data.sellVolume) - (prevRow.buy_volume - prevRow.sell_volume)
-          : 0;
+          : data.buyVolume - data.sellVolume;
 
         // Save to history
         await supabase.from('cvd_history').insert({
