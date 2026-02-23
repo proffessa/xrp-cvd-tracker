@@ -45,10 +45,10 @@ export default async function handler(req, res) {
 
     if (exchange === 'binance') {
       const [klinesJson, oiJson, lsJson, bookJson] = await Promise.all([
-        safeFetch('https://fapi.binance.com/fapi/v1/klines?symbol=XRPUSDT&interval=5m&limit=2'),
-        safeFetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=XRPUSDT'),
-        safeFetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=XRPUSDT&period=5m&limit=1'),
-        safeFetch('https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol=XRPUSDT'),
+        safeFetch('https://www.binance.com/fapi/v1/klines?symbol=XRPUSDT&interval=5m&limit=2'),
+        safeFetch('https://www.binance.com/fapi/v1/openInterest?symbol=XRPUSDT'),
+        safeFetch('https://www.binance.com/futures/data/topLongShortPositionRatio?symbol=XRPUSDT&period=5m&limit=1'),
+        safeFetch('https://www.binance.com/fapi/v1/ticker/bookTicker?symbol=XRPUSDT'),
       ]);
 
       if (!klinesJson) throw new Error('binance: klines endpoint failed');
@@ -56,7 +56,6 @@ export default async function handler(req, res) {
       if (!lsJson) throw new Error('binance: topLongShortPositionRatio endpoint failed');
       if (!bookJson) throw new Error('binance: bookTicker endpoint failed');
 
-      // limit=2 ile son tamamlanmış mumu al (index 0), en son mum henüz kapanmamış olabilir
       const candle = klinesJson[0];
       const totalVol = parseFloat(candle[5]);
       const takerBuyVol = parseFloat(candle[9]);
@@ -72,9 +71,10 @@ export default async function handler(req, res) {
       data = { cvdDelta, openInterest, longVol, shortVol, price };
     }
     else if (exchange === 'bybit') {
+      // api.bybit.com is blocked from Vercel; api.bytick.com is Bybit's official backup domain
       const [tickerJson, ratioJson] = await Promise.all([
-        safeFetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=XRPUSDT'),
-        safeFetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=1h&limit=1'),
+        safeFetch('https://api.bytick.com/v5/market/tickers?category=linear&symbol=XRPUSDT'),
+        safeFetch('https://api.bytick.com/v5/market/account-ratio?category=linear&symbol=XRPUSDT&period=1h&limit=1'),
       ]);
 
       if (!tickerJson || tickerJson.retCode !== 0) throw new Error('bybit: tickers endpoint failed');
