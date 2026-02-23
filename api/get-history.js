@@ -38,8 +38,8 @@ export default async function handler(req, res) {
     let query = supabase
       .from('cvd_history')
       .select('id, timestamp, exchange, cvd, buy_volume, sell_volume, price')
-      .order('timestamp', { ascending: true })
-      .limit(10000);
+      .order('timestamp', { ascending: false })
+      .limit(1000);
 
     if (period !== 'all' && PERIOD_MS[period]) {
       const startDate = new Date(Date.now() - PERIOD_MS[period]);
@@ -53,12 +53,14 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to fetch history' });
     }
 
-    // Each saved record already contains a single-snapshot delta:
-    //   buy_volume - sell_volume = net buy pressure for that interval
-    // So cumulative CVD = simple running sum of those deltas per exchange.
+    // Reverse so data is oldest-first for cumulative calculation
+    const sorted = (historyData || []).reverse();
+
+    // Each saved record contains a net delta (buy_volume - sell_volume)
+    // cvd===0 means old seed row — fall back to buy_volume - sell_volume
     const cumulMap = {};
 
-    const enriched = (historyData || []).map(record => {
+    const enriched = sorted.map(record => {
       const exId = record.exchange;
       const delta = (Number.isFinite(record.cvd) && record.cvd !== 0)
         ? record.cvd
