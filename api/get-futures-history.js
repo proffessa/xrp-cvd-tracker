@@ -46,7 +46,9 @@ export default async function handler(req, res) {
     let query = supabase
       .from('futures_history')
       .select('exchange, cvd_delta, open_interest, long_vol, short_vol, price, timestamp')
-      .order('timestamp', { ascending: true })
+      // NOTE: Supabase may cap rows per request (e.g. 1000). Fetch newest rows first,
+      // then reverse below so frontend receives chronological points.
+      .order('timestamp', { ascending: false })
       .limit(50000);
 
     if (exchangeList.length > 0) {
@@ -65,9 +67,11 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to fetch futures history' });
     }
 
+    // Query is newest-first; reverse so cumulative calculation is oldest->newest.
+    const sortedHistory = (historyData || []).slice().reverse();
     const cumulMap = {};
 
-    const enriched = (historyData || []).map(record => {
+    const enriched = sortedHistory.map(record => {
       const exId = record.exchange;
       const delta = Number.isFinite(record.cvd_delta) ? record.cvd_delta : 0;
 
