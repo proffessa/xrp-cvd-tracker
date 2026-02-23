@@ -32,9 +32,11 @@ export default async function handler(req, res) {
         .limit(1)
         .maybeSingle();
 
-      const cvdDelta = prevRow
-        ? (data.longVol - data.shortVol) - (prevRow.long_vol - prevRow.short_vol)
-        : 0;
+      const apiDelta = Number.isFinite(data.cvdDelta) ? data.cvdDelta : 0;
+      const prevNet = prevRow ? ((prevRow.long_vol || 0) - (prevRow.short_vol || 0)) : null;
+      const currentNet = (data.longVol || 0) - (data.shortVol || 0);
+      const inferredDelta = prevNet === null ? apiDelta : (currentNet - prevNet);
+      const cvdDelta = apiDelta !== 0 ? apiDelta : inferredDelta;
 
       const { error: insertError } = await supabase.from('futures_history').insert({
         exchange: exchangeId,
