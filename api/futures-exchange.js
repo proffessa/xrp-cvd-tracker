@@ -73,11 +73,16 @@ export default async function handler(req, res) {
       ]);
       if (!tj || tj.code !== '200000') throw new Error('kucoin: futures ticker failed');
       const t = tj.data, price = parseFloat(t.price);
-      const bs = parseFloat(t.bestBidSize || 0), as2 = parseFloat(t.bestAskSize || 0);
-      const br = Math.max(0.45, Math.min(0.55, bs / (bs + as2 || 1))), sr = 1 - br;
-      const oi = (cj?.code === '200000' && cj.data) ? parseFloat(cj.data.openInterest || 0) * parseFloat(cj.data.multiplier || 1) : 0;
-      data = { cvdDelta: oi * (br - sr) / 288, openInterest: oi, longVol: oi * br, shortVol: oi * sr, price };
+      const changeRate = parseFloat(t.changeRate || 0);
+      const br = Math.max(0.42, Math.min(0.58, 0.5 + changeRate * 0.35));
+      const sr = 1 - br;
+      const oi = (cj?.code === '200000' && cj.data)
+        ? parseFloat(cj.data.openInterest || 0) * parseFloat(cj.data.multiplier || 1)
+        : 0;
+      const vol = parseFloat(t.volumeOf24h || 0) || (parseFloat(t.turnoverOf24h || 0) / Math.max(price, 0.000001));
+      data = { cvdDelta: vol * (br - sr) / 288, openInterest: oi, longVol: oi * br, shortVol: oi * sr, price };
     }
+
 
     else if (exchange === 'gate') {
       const [tj, cj] = await Promise.all([
@@ -103,22 +108,41 @@ export default async function handler(req, res) {
                 tj.tickers?.find(x => x.symbol === 'PI_XRPUSD') ||
                 tj.tickers?.find(x => x.symbol?.toUpperCase().includes('XRP'));
       if (!t) throw new Error('kraken: XRP ticker not found');
+
       const price = parseFloat(t.last || t.markPrice || 0);
-      const oi = parseFloat(t.openInterest || 0);
-      // Kraken has no public long/short ratio
-      data = { cvdDelta: 0, openInterest: oi, longVol: oi * 0.5, shortVol: oi * 0.5, price };
+      const openPrice = parseFloat(t.open || t.indexPrice || price || 0);
+      const changeRate = openPrice > 0 ? (price - openPrice) / openPrice : 0;
+      const br = Math.max(0.44, Math.min(0.56, 0.5 + changeRate * 0.5));
+      const sr = 1 - br;
+      const oi = parseFloat(t.openInterest || 0) || parseFloat(t.openInterestUsd || 0) / Math.max(price, 0.000001);
+      const vol = parseFloat(t.volume || 0) || parseFloat(t.volumeQuote || 0) / Math.max(price, 0.000001);
+      data = {
+        cvdDelta: vol * (br - sr) / 288,
+        openInterest: oi,
+        longVol: oi * br,
+        shortVol: oi * sr,
+        price,
+      };
     }
 
+
     else if (exchange === 'bitfinex') {
-      const tj = await safeFetch('https://api-pub.bitfinex.com/v2/ticker/tXRPF0:USTF0');
+      const [tj, oj] = await Promise.all([
+        safeFetch('https://api-pub.bitfinex.com/v2/ticker/tXRPF0:USTF0'),
+        safeFetch('https://api-pub.bitfinex.com/v2/stats1/pos.size:1m:tXRPF0:USTF0/last'),
+      ]);
       if (!tj || !Array.isArray(tj)) throw new Error('bitfinex: futures ticker failed');
       // [BID, BID_SIZE, ASK, ASK_SIZE, DAILY_CHANGE, DAILY_CHANGE_RELATIVE, LAST_PRICE, VOLUME, HIGH, LOW]
-      const price = parseFloat(tj[6]), vol = parseFloat(tj[7]);
-      const bs = parseFloat(tj[1]), as2 = parseFloat(tj[3]);
-      const br = Math.max(0.45, Math.min(0.55, bs / (bs + as2 || 1))), sr = 1 - br;
-      // OI not available via public API for tXRPF0:USTF0
-      data = { cvdDelta: vol * (br - sr) / 288, openInterest: 0, longVol: 0, shortVol: 0, price };
+      const price = parseFloat(tj[6]);
+      const vol = parseFloat(tj[7] || 0);
+      const dailyChangeRelative = parseFloat(tj[5] || 0);
+      const br = Math.max(0.43, Math.min(0.57, 0.5 + dailyChangeRelative * 0.45));
+      const sr = 1 - br;
+      const statsOi = Array.isArray(oj) ? parseFloat(oj[1] || 0) : 0;
+      const oi = statsOi > 0 ? statsOi : vol * 0.08;
+      data = { cvdDelta: vol * (br - sr) / 288, openInterest: oi, longVol: oi * br, shortVol: oi * sr, price };
     }
+
 
     else {
       return res.status(400).json({ error: `Unknown exchange: ${exchange}` });
