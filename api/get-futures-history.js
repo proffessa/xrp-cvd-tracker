@@ -1,6 +1,8 @@
 // api/get-futures-history.js - Get futures CVD history from Supabase
 import { createClient } from '@supabase/supabase-js';
 
+const DEFAULT_FUTURES_EXCHANGES = ['binance', 'bybit', 'okx', 'kucoin', 'gate', 'kraken', 'bitfinex'];
+
 const PERIOD_MS = {
   '1h':  1 * 60 * 60 * 1000,
   '6h':  6 * 60 * 60 * 1000,
@@ -11,6 +13,10 @@ const PERIOD_MS = {
 };
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -31,13 +37,23 @@ export default async function handler(req, res) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { period = '1d' } = req.query;
+    const { period = '1d', exchanges } = req.query;
+    const exchangeList = String(exchanges || DEFAULT_FUTURES_EXCHANGES.join(','))
+      .split(',')
+      .map(exchange => exchange.trim().toLowerCase())
+      .filter(Boolean);
 
     let query = supabase
       .from('futures_history')
       .select('exchange, cvd_delta, open_interest, long_vol, short_vol, price, timestamp')
-      .order('timestamp', { ascending: true })
-      .limit(10000);
+      // NOTE: Supabase may cap rows per request (e.g. 1000). Fetch newest rows first,
+      // then reverse below so frontend receives chronological points.
+      .order('timestamp', { ascending: false })
+      .limit(50000);
+
+    if (exchangeList.length > 0) {
+      query = query.in('exchange', exchangeList);
+    }
 
     if (period !== 'all' && PERIOD_MS[period]) {
       const startDate = new Date(Date.now() - PERIOD_MS[period]);
@@ -51,9 +67,11 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to fetch futures history' });
     }
 
+    // Query is newest-first; reverse so cumulative calculation is oldest->newest.
+    const sortedHistory = (historyData || []).slice().reverse();
     const cumulMap = {};
 
-    const enriched = (historyData || []).map(record => {
+    const enriched = sortedHistory.map(record => {
       const exId = record.exchange;
       const delta = Number.isFinite(record.cvd_delta) ? record.cvd_delta : 0;
 
